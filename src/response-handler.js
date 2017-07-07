@@ -1,5 +1,5 @@
 const agent = require('superagent')
-const kafka = require('kafka')
+const kafka = require('kafka-node')
 const util = require('util')
 const client = new kafka.Client('localhost:2181')
 const producer = new kafka.HighLevelProducer(client)

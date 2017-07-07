@@ -1,4 +1,4 @@
-const kafka = require('kafka')
+const kafka = require('kafka-node')
 const { Reader } = require('oer-utils')
 const util = require('util')
 const client = new kafka.Client('localhost:2181')
