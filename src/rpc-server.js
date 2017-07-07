@@ -4,7 +4,7 @@ const Parser = require('koa-bodyparser')
 const kafka = require('kafka-node')
 const EventEmitter = require('events')
 const uuid = require('uuid')
-const util = require('util')
+const util = require('./util')
 
 const app = new Koa()
 const router = Router()
@@ -15,10 +15,14 @@ const producer = new kafka.HighLevelProducer(client)
 const consumer = new kafka.ConsumerGroup({
   host: 'localhost:2181'
 }, 'incoming-send-request-responses')
+console.log('listening for incoming-send-request-responses')
+consumer.on('error', error => console.error(error))
 
 const responder = new EventEmitter()
 consumer.on('message', (message) => {
   const data = JSON.parse(message.value)
+  console.log('process incoming-send-request-responses', data.id)
+
   responder.emit(data.id, data)
 })
 

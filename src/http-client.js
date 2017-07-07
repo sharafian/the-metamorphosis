@@ -1,6 +1,6 @@
 const agent = require('superagent')
 const kafka = require('kafka-node')
-const util = require('util')
+const util = require('./util')
 const client = new kafka.Client('localhost:2181')
 const producer = new kafka.HighLevelProducer(client)
 const produce = util.promisify(producer.send.bind(producer))
@@ -14,6 +14,8 @@ function getPeerRpcUri (prefix) {
 
 consumer.on('message', async (message) => {
   const { id, body, method, prefix } = JSON.parse(message.value)
+  console.log('process outgoing-rpc-requests', id)
+
   const { uri, token } = getPeerRpcInfo(prefix)
 
   const response = await agent({
@@ -30,3 +32,6 @@ consumer.on('message', async (message) => {
     timestamp: Date.now()
   }])
 })
+
+console.log('listening for outgoing-rpc-requests')
+consumer.on('error', error => console.error(error))

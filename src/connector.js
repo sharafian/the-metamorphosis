@@ -1,6 +1,6 @@
 const kafka = require('kafka-node')
 const { Reader } = require('oer-utils')
-const util = require('util')
+const util = require('./util')
 const client = new kafka.Client('localhost:2181')
 const producer = new kafka.HighLevelProducer(client)
 const IlpPacket = require('ilp-packet')
@@ -39,6 +39,8 @@ function routeTransfer (prefix, packet) {
 
 incomingTransfers.on('message', async (message) => {
   const { id, body, prefix } = JSON.parse(message.value) 
+  console.log('process incoming-send-transfer', id)
+
   const transfer = body[0]
 
   const { nextHop, nextAmount } = routeTransfer(prefix, transfer.ilp)
@@ -66,8 +68,9 @@ incomingTransfers.on('message', async (message) => {
   }])
 })
 
-incomingRequests.on('message', (message) => {
+incomingRequests.on('message', async (message) => {
   const { id, body, prefix } = JSON.parse(message.value) 
+  console.log('process incoming-send-request', id)
   const request = body[0]
 
   const packetReader = new Reader(Buffer.from(request.ilp, 'base64'))
@@ -93,3 +96,9 @@ incomingRequests.on('message', (message) => {
     timestamp: Date.now()
   }])
 })
+
+console.log('listening for incoming-send-transfer')
+console.log('listening for incoming-send-request')
+
+incomingTransfers.on('error', error => console.error(error))
+incomingRequests.on('error', error => console.error(error))
