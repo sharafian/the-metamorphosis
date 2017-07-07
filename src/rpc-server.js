@@ -13,10 +13,12 @@ const parser = Parser()
 const client = new kafka.Client('localhost:2181')
 const producer = new kafka.HighLevelProducer(client)
 const consumer = new kafka.ConsumerGroup({
-  host: 'localhost:2181'
+  host: 'localhost:2181',
+  groupId: 'rpcServer'
 }, 'incoming-send-request-responses')
 console.log('listening for incoming-send-request-responses')
 consumer.on('error', error => console.error(error))
+producer.on('error', error => console.error(error))
 
 const responder = new EventEmitter()
 consumer.on('message', (message) => {

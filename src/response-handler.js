@@ -5,7 +5,8 @@ const client = new kafka.Client('localhost:2181')
 const producer = new kafka.HighLevelProducer(client)
 const produce = util.promisify(producer.send.bind(producer))
 const consumer = new kafka.ConsumerGroup({
-  host: 'localhost:2181'
+  host: 'localhost:2181',
+  groupId: 'responseHandler'
 }, 'outgoing-rpc-responses')
 
 consumer.on('message', async (message) => {

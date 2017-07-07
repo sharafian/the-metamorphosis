@@ -8,8 +8,8 @@ const consumer = new kafka.ConsumerGroup({
   host: 'localhost:2181'
 }, 'outgoing-rpc-requests')
 
-function getPeerRpcUri (prefix) {
-  return 'http://localhost:8090/rpc/bob'
+function getPeerRpcInfo (prefix) {
+  return { uri: 'http://localhost:8090/rpc/bob', token: 'token' }
 }
 
 consumer.on('message', async (message) => {
@@ -18,13 +18,11 @@ consumer.on('message', async (message) => {
 
   const { uri, token } = getPeerRpcInfo(prefix)
 
-  const response = await agent({
-    method: 'post',
-    uri: `${uri}?method=${method}&prefix=${prefix}`,
-    auth: { bearer: token },
-    json: true,
-    body
-  })
+  const response = await agent
+    .post(uri)
+    .query({ method, prefix })
+    .set('Authorization', 'Bearer ' + token)
+    .send(body)
 
   await produce([{
     topic: 'outgoing-rpc-responses',

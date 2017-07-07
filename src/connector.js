@@ -8,11 +8,13 @@ const produce = util.promisify(producer.send.bind(producer))
 
 // TODO: split this shit up
 const incomingTransfers = new kafka.ConsumerGroup({
-  host: 'localhost:2181'
+  host: 'localhost:2181',
+  groupId: 'incomingTransfers'
 }, 'incoming-send-transfer')
 
 const incomingRequests = new kafka.ConsumerGroup({
-  host: 'localhost:2181'
+  host: 'localhost:2181',
+  groupId: 'incomingRequests'
 }, 'incoming-send-request')
 
 function getNextHop (destination) {
@@ -38,7 +40,7 @@ function routeTransfer (prefix, packet) {
 }
 
 incomingTransfers.on('message', async (message) => {
-  const { id, body, prefix } = JSON.parse(message.value) 
+  const { id, body, method, prefix } = JSON.parse(message.value) 
   console.log('process incoming-send-transfer', id)
 
   const transfer = body[0]
@@ -69,7 +71,7 @@ incomingTransfers.on('message', async (message) => {
 })
 
 incomingRequests.on('message', async (message) => {
-  const { id, body, prefix } = JSON.parse(message.value) 
+  const { id, body, method, prefix } = JSON.parse(message.value) 
   console.log('process incoming-send-request', id)
   const request = body[0]
 
