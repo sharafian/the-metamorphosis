@@ -34,25 +34,23 @@ incomingFulfill.on('message', async (message) => {
   const fulfillment = body && body[1]
 
   if (!transfer || !fulfillment) {
-    console.log('got incoming-fulfill-condition with no transfer or fulfillment. fulfillment: ', fulfillment, 'transfer:', transfer)
-    // TODO do something
+    console.log('got incoming-fulfill-condition with no fulfillment. fulfillment: ', fulfillment)
     return
   }
 
   console.log('found transfer', id, transfer, 'for fulfillment:', fulfillment)
 
-  //if (!hash(fulfillment).equals(Buffer.from(transfer.executionCondition, 'base64'))) {
-    //console.log(`got incoming-fulfill-condition where fulfillment doesn't match condition. transfer: ${transferId}, fulfillment: ${fulfillment}, condition: ${transfer.executionCondition}`)
-  //}
+  if (!hash(fulfillment).equals(Buffer.from(transfer.executionCondition, 'base64'))) {
+    console.log(`got incoming-fulfill-condition where fulfillment doesn't match condition. transfer: ${transferId}, fulfillment: ${fulfillment}, condition: ${transfer.executionCondition}`)
+  }
 
   try {
     await util.promisify(producer.send.bind(producer))([{
-      topic: 'outgoing-fulfill-condition',
+      topic: 'outgoing-rpc-requests',
       messages: Buffer.from(JSON.stringify({
         id,
-        transferId,
-        fulfillment,
         prefix: transfer.ledger,
+        body: [transferId, fulfillment],
         method
       })),
       timestamp: Date.now()

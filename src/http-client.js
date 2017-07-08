@@ -48,24 +48,6 @@ outgoingRpcRequests.on('message', async (message) => {
 console.log('listening for outgoing-rpc-requests')
 outgoingRpcRequests.on('error', error => console.error(error))
 
-outgoingFulfillCondition.on('message', async (message) => {
-  const { id, fulfillment, transferId, method, prefix } = JSON.parse(message.value)
-  console.log('process outgoing-rpc-requests', id)
-
-  const { uri, token } = getPeerRpcInfo(prefix)
-
-  try {
-    const response = await agent
-      .post(uri)
-      .query({ method, prefix })
-      .set('Authorization', 'Bearer ' + token)
-      .send([transferId, fulfillment])
-  } catch (err) {
-    console.error(`error sending rpc request ${id} to ${prefix} (${uri})`, err)
-  }
-})
-
 client.once('ready', () => console.log('listening for outgoing-rpc-requests'))
-outgoingFulfillCondition.on('error', error => console.error(error))
 client.on('error', error => console.error(error))
 producer.on('error', error => console.error(error))
