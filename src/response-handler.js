@@ -10,17 +10,23 @@ const consumer = new kafka.ConsumerGroup({
 }, 'outgoing-rpc-responses')
 
 consumer.on('message', async (message) => {
-  const { id, method } = JSON.parse(message.value)
+  const { id, method, body } = JSON.parse(message.value)
   console.log('process outgoing-rpc-responses', id)
 
   if (method !== 'send_request') return
-  
-  await produce([{
-    topic: 'incoming-send-request-responses',
-    messages: Buffer.from(message.value, 'binary'),
-    timestamp: Date.now()
-  }])
+
+  try {
+    await produce([{
+      topic: 'incoming-send-request-responses',
+      messages: Buffer.from(message.value, 'binary'),
+      timestamp: Date.now()
+    }])
+  } catch (err) {
+    console.error('error producing to incoming-send-request-responses', id, err)
+  }
 })
 
-console.log('listening for outgoing-rpc-responses')
+client.once('ready', () => console.log('listening for outgoing-rpc-responses'))
 consumer.on('error', error => console.error(error))
+client.on('error', error => console.error(error))
+producer.on('error', error => console.error(error))

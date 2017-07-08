@@ -21,7 +21,7 @@ function getNextHop (destination) {
   return { connectorLedger: 'test.east.', connectorAccount: 'test.east.server' }
 }
 
-function getNextAmount (sourceLedger, destinationLedger, amount) {
+function getNextAmount ({ sourceLedger, destinationLedger, amount }) {
   return amount
 }
 
@@ -40,7 +40,7 @@ function routeTransfer (prefix, packet) {
 }
 
 incomingTransfers.on('message', async (message) => {
-  const { id, body, method, prefix } = JSON.parse(message.value) 
+  const { id, body, method, prefix } = JSON.parse(message.value)
   console.log('process incoming-send-transfer', id)
 
   const transfer = body[0]
@@ -52,26 +52,31 @@ incomingTransfers.on('message', async (message) => {
     id: transfer.id, // TODO: unwise
     ledger: nextHop.connectorLedger,
     to: nextHop.connectorAccount,
+    from: nextHop.connectorLedger + 'client',
     amount: nextAmount,
     expiresAt: nextExpiry,
     executionCondition: transfer.executionCondition,
     ilp: transfer.ilp
-  } ] 
+  } ]
 
-  await produce([{
-    topic: 'outgoing-rpc-requests',
-    messages: Buffer.from(JSON.stringify({
-      id,
-      method,
-      prefix: nextHop.connectorLedger,
-      body: nextTransfer
-    })),
-    timestamp: Date.now()
-  }])
+  try {
+    await produce([{
+      topic: 'outgoing-rpc-requests',
+      messages: Buffer.from(JSON.stringify({
+        id,
+        method,
+        prefix: nextHop.connectorLedger,
+        body: nextTransfer
+      })),
+      timestamp: Date.now()
+    }])
+  } catch (err) {
+    console.error('error producing to outgoing-rpc-request', id, err)
+  }
 })
 
 incomingRequests.on('message', async (message) => {
-  const { id, body, method, prefix } = JSON.parse(message.value) 
+  const { id, body, method, prefix } = JSON.parse(message.value)
   console.log('process incoming-send-request', id)
   const request = body[0]
 
@@ -84,23 +89,32 @@ incomingRequests.on('message', async (message) => {
   const nextRequest = [ {
     ledger: nextHop.connectorLedger,
     to: nextHop.connectorAccount,
+    from: nextHop.connectorLedger + 'client',
     ilp: request.ilp
-  } ] 
+  } ]
 
-  await produce([{
-    topic: 'outgoing-rpc-requests',
-    messages: Buffer.from(JSON.stringify({
-      id,
-      method,
-      prefix: nextHop.connectorLedger,
-      body: nextRequest
-    })),
-    timestamp: Date.now()
-  }])
+  try {
+    await produce([{
+      topic: 'outgoing-rpc-requests',
+      messages: Buffer.from(JSON.stringify({
+        id,
+        method,
+        prefix: nextHop.connectorLedger,
+        body: nextRequest
+      })),
+      timestamp: Date.now()
+    }])
+  } catch (err) {
+    console.error('error producing to outgoing-rpc-request', id, err)
+  }
 })
 
-console.log('listening for incoming-send-transfer')
-console.log('listening for incoming-send-request')
+client.once('ready', () => {
+  console.log('listening for incoming-send-transfer')
+  console.log('listening for incoming-send-request')
+})
 
 incomingTransfers.on('error', error => console.error(error))
 incomingRequests.on('error', error => console.error(error))
+client.on('error', error => console.error(error))
+producer.on('error', error => console.error(error))
