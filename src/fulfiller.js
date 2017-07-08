@@ -52,7 +52,7 @@ incomingFulfill.on('message', async (message) => {
         id,
         transferId,
         fulfillment,
-        prefix: transfer.prefix,
+        prefix: transfer.ledger,
         method
       })),
       timestamp: Date.now()

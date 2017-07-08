@@ -13,7 +13,8 @@ const outgoingFulfillCondition = new kafka.ConsumerGroup({
 }, 'outgoing-fulfill-condition')
 
 function getPeerRpcInfo (prefix) {
-  return { uri: 'http://localhost:8090/rpc/bob', token: 'token' }
+  return { 'test.east.': { uri: 'http://ilp-kit2:4010/api/peers/rpc', token: 'token' },
+    'test.west.': { uri: 'http://ilp-kit1:3010/api/peers/rpc', token: 'token' }}[prefix]
 }
 
 outgoingRpcRequests.on('message', async (message) => {
@@ -36,7 +37,7 @@ outgoingRpcRequests.on('message', async (message) => {
   try {
     await produce([{
       topic: 'outgoing-rpc-responses',
-      messages: Buffer.from(JSON.stringify({ id, method, prefix, body: response })),
+      messages: Buffer.from(JSON.stringify({ id, method, prefix, body: response.body })),
       timestamp: Date.now()
     }])
   } catch (err) {

@@ -10,7 +10,7 @@ const consumer = new kafka.ConsumerGroup({
 }, 'outgoing-rpc-responses')
 
 consumer.on('message', async (message) => {
-  const { id, method } = JSON.parse(message.value)
+  const { id, method, body } = JSON.parse(message.value)
   console.log('process outgoing-rpc-responses', id)
 
   if (method !== 'send_request') return

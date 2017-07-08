@@ -21,7 +21,7 @@ function getNextHop (destination) {
   return { connectorLedger: 'test.east.', connectorAccount: 'test.east.server' }
 }
 
-function getNextAmount (sourceLedger, destinationLedger, amount) {
+function getNextAmount ({ sourceLedger, destinationLedger, amount }) {
   return amount
 }
 
@@ -52,6 +52,7 @@ incomingTransfers.on('message', async (message) => {
     id: transfer.id, // TODO: unwise
     ledger: nextHop.connectorLedger,
     to: nextHop.connectorAccount,
+    from: nextHop.connectorLedger + 'client',
     amount: nextAmount,
     expiresAt: nextExpiry,
     executionCondition: transfer.executionCondition,
@@ -88,6 +89,7 @@ incomingRequests.on('message', async (message) => {
   const nextRequest = [ {
     ledger: nextHop.connectorLedger,
     to: nextHop.connectorAccount,
+    from: nextHop.connectorLedger + 'client',
     ilp: request.ilp
   } ]
 
