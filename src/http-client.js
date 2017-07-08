@@ -22,17 +22,26 @@ outgoingRpcRequests.on('message', async (message) => {
 
   const { uri, token } = getPeerRpcInfo(prefix)
 
-  const response = await agent
-    .post(uri)
-    .query({ method, prefix })
-    .set('Authorization', 'Bearer ' + token)
-    .send(body)
+  let response
+  try {
+    response = await agent
+      .post(uri)
+      .query({ method, prefix })
+      .set('Authorization', 'Bearer ' + token)
+      .send(body)
+  } catch (err) {
+    console.error(`error sending rpc request ${id} to ${prefix} (${uri})`, err)
+  }
 
-  await produce([{
-    topic: 'outgoing-rpc-responses',
-    messages: Buffer.from(JSON.stringify({ id, method, prefix, body: response })),
-    timestamp: Date.now()
-  }])
+  try {
+    await produce([{
+      topic: 'outgoing-rpc-responses',
+      messages: Buffer.from(JSON.stringify({ id, method, prefix, body: response })),
+      timestamp: Date.now()
+    }])
+  } catch (err) {
+    console.error('error producing to outgoing-rpc-responses', id, err)
+  }
 })
 
 console.log('listening for outgoing-rpc-requests')
@@ -44,11 +53,15 @@ outgoingFulfillCondition.on('message', async (message) => {
 
   const { uri, token } = getPeerRpcInfo(prefix)
 
-  const response = await agent
-    .post(uri)
-    .query({ method, prefix })
-    .set('Authorization', 'Bearer ' + token)
-    .send([transferId, fulfillment])
+  try {
+    const response = await agent
+      .post(uri)
+      .query({ method, prefix })
+      .set('Authorization', 'Bearer ' + token)
+      .send([transferId, fulfillment])
+  } catch (err) {
+    console.error(`error sending rpc request ${id} to ${prefix} (${uri})`, err)
+  }
 })
 
 client.once('ready', () => console.log('listening for outgoing-rpc-requests'))

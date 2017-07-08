@@ -15,11 +15,15 @@ consumer.on('message', async (message) => {
 
   if (method !== 'send_request') return
 
-  await produce([{
-    topic: 'incoming-send-request-responses',
-    messages: Buffer.from(message.value, 'binary'),
-    timestamp: Date.now()
-  }])
+  try {
+    await produce([{
+      topic: 'incoming-send-request-responses',
+      messages: Buffer.from(message.value, 'binary'),
+      timestamp: Date.now()
+    }])
+  } catch (err) {
+    console.error('error producing to incoming-send-request-responses', id, err)
+  }
 })
 
 client.once('ready', () => console.log('listening for outgoing-rpc-responses'))

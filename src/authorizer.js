@@ -20,37 +20,41 @@ consumer.on('message', async (message) => {
   const { id, body, method, prefix } = JSON.parse(message.value)
   console.log('process incoming-rpc-requests', id)
 
-  switch (method) {
-    case 'send_transfer':
-      const sendTransferId = body && body[0] && body[0].id
-      await produce([{
-        topic: 'incoming-send-transfer',
-        messages: Buffer.from(JSON.stringify({ id, body, prefix, method })),
-        timestamp: Date.now(),
-        key: sendTransferId
-      }])
-      break
-    case 'fulfill_condition':
-      const fulfillTransferId = body && body[0]
-      await produce([{
-        topic: 'incoming-fulfill-condition',
-        messages: Buffer.from(JSON.stringify({ id, body, prefix, method })),
-        timestamp: Date.now(),
-        key: fulfillTransferId
-      }])
-      break
-    case 'send_request':
-      await produce([{
-        topic: 'incoming-send-request',
-        messages: Buffer.from(JSON.stringify({ id, body, prefix, method })),
-        timestamp: Date.now(),
-        key: id
-        // TODO is there an intelligent way to partiion requests?
-      }])
-      break
+  try {
+    switch (method) {
+      case 'send_transfer':
+        const sendTransferId = body && body[0] && body[0].id
+        await produce([{
+          topic: 'incoming-send-transfer',
+          messages: Buffer.from(JSON.stringify({ id, body, prefix, method })),
+          timestamp: Date.now(),
+          key: sendTransferId
+        }])
+        break
+      case 'fulfill_condition':
+        const fulfillTransferId = body && body[0]
+        await produce([{
+          topic: 'incoming-fulfill-condition',
+          messages: Buffer.from(JSON.stringify({ id, body, prefix, method })),
+          timestamp: Date.now(),
+          key: fulfillTransferId
+        }])
+        break
+      case 'send_request':
+        await produce([{
+          topic: 'incoming-send-request',
+          messages: Buffer.from(JSON.stringify({ id, body, prefix, method })),
+          timestamp: Date.now(),
+          key: id
+          // TODO is there an intelligent way to partiion requests?
+        }])
+        break
 
-    default:
-      return
+      default:
+        return
+    }
+  } catch (err) {
+    console.error('error producing message from incoming-rpc-requests', id, err)
   }
 })
 

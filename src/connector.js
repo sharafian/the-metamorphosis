@@ -58,16 +58,20 @@ incomingTransfers.on('message', async (message) => {
     ilp: transfer.ilp
   } ]
 
-  await produce([{
-    topic: 'outgoing-rpc-requests',
-    messages: Buffer.from(JSON.stringify({
-      id,
-      method,
-      prefix: nextHop.connectorLedger,
-      body: nextTransfer
-    })),
-    timestamp: Date.now()
-  }])
+  try {
+    await produce([{
+      topic: 'outgoing-rpc-requests',
+      messages: Buffer.from(JSON.stringify({
+        id,
+        method,
+        prefix: nextHop.connectorLedger,
+        body: nextTransfer
+      })),
+      timestamp: Date.now()
+    }])
+  } catch (err) {
+    console.error('error producing to outgoing-rpc-request', id, err)
+  }
 })
 
 incomingRequests.on('message', async (message) => {
@@ -87,16 +91,20 @@ incomingRequests.on('message', async (message) => {
     ilp: request.ilp
   } ]
 
-  await produce([{
-    topic: 'outgoing-rpc-requests',
-    messages: Buffer.from(JSON.stringify({
-      id,
-      method,
-      prefix: nextHop.connectorLedger,
-      body: nextRequest
-    })),
-    timestamp: Date.now()
-  }])
+  try {
+    await produce([{
+      topic: 'outgoing-rpc-requests',
+      messages: Buffer.from(JSON.stringify({
+        id,
+        method,
+        prefix: nextHop.connectorLedger,
+        body: nextRequest
+      })),
+      timestamp: Date.now()
+    }])
+  } catch (err) {
+    console.error('error producing to outgoing-rpc-request', id, err)
+  }
 })
 
 client.once('ready', () => {

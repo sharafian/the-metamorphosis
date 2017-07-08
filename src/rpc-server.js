@@ -41,11 +41,15 @@ router.post('/rpc', async (ctx) => {
     return
   }
 
-  await util.promisify(producer.send.bind(producer))([{
-    topic: 'incoming-rpc-requests',
-    messages: Buffer.from(JSON.stringify({ id, body, method, prefix, auth })),
-    timestamp: Date.now()
-  }])
+  try {
+    await util.promisify(producer.send.bind(producer))([{
+      topic: 'incoming-rpc-requests',
+      messages: Buffer.from(JSON.stringify({ id, body, method, prefix, auth })),
+      timestamp: Date.now()
+    }])
+  } catch (err) {
+    console.error('error producing to incoming-rpc-requests', id, err)
+  }
 
   if (method === 'send_request') {
     const response = await new Promise((resolve) => {
@@ -59,8 +63,10 @@ router.post('/rpc', async (ctx) => {
   ctx.body = true
 })
 
+const port = process.env.PORT || 8080
 app
   .use(parser)
   .use(router.routes())
   .use(router.allowedMethods())
-  .listen(process.env.PORT || 8080)
+  .listen(port)
+console.log('rpc server listening on: ' + port)
