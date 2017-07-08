@@ -1,0 +1,25 @@
+digraph streams {
+  subgraph components {
+    node [ shape = box ];
+    "rpc-server"
+    "authorizer"
+    "connector"
+    "http-client"
+    "fulfiller"
+    "quoter"
+  }
+
+  "rpc-server" -> "incoming-rpc-requests" -> "authorizer";
+  "authorizer" -> "incoming-send-transfer" -> "connector";
+  "authorizer" -> "incoming-send-request" -> "quoter";
+  "authorizer" -> "incoming-fulfill-condition" -> "fulfiller";
+  "connector" -> "outgoing-rpc-requests" -> "http-client";
+  "quoter" -> "outgoing-rpc-requests"
+  "http-client" -> "outgoing-rpc-responses" -> "quoter" -> "incoming-send-request-responses" -> "rpc-server";
+  "fulfiller" -> "outgoing-rpc-requests";
+
+  { rank = same; "rpc-server" "incoming-rpc-requests" "authorizer" "incoming-send-transfer" "connector" "outgoing-rpc-requests" "http-client" }
+  { rank = source; "fulfiller" "incoming-fulfill-condition" }
+
+
+}
