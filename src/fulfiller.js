@@ -60,6 +60,8 @@ incomingFulfill.on('message', async (message) => {
   } catch (err) {
     console.error('error producing to outgoing-fulfill-condition', id, err)
   }
+
+  delete sourceTransfers[transferId]
 })
 
 client.once('ready', () => console.log('listening for incoming-fulfill-condition'))
