@@ -2,54 +2,69 @@ const kafka = require('kafka-node')
 const util = require('./util')
 const client = new kafka.Client('localhost:2181')
 const producer = new kafka.HighLevelProducer(client)
-const consumer = new kafka.ConsumerGroup({
+const incomingFulfill = new kafka.ConsumerGroup({
   host: 'localhost:2181',
   groupId: 'authorizer'
 }, 'incoming-fulfill-condition')
-const offset = new kafka.Offset(client)
-const offsetFetch = util.promisify(offset.fetch.bind(offset))
+const incomingTransfer = new kafka.ConsumerGroup({
+  host: 'localhost:2181',
+  groupId: 'authorizer'
+}, 'incoming-send-transfer')
 const crypto = require('crypto')
 
-consumer.on('message', async (message) => {
-  const transferId = message.partition
+// TODO put them in a better KV store
+const sourceTransfers = {}
+
+incomingTransfer.on('message', async (message) => {
   const { id, body, method, prefix } = JSON.parse(message.value)
+  const transfer = body[0]
+  sourceTransfers[transfer.id] = transfer
+})
+
+incomingFulfill.on('message', async (message) => {
+  const { id, body, method, prefix } = JSON.parse(message.value)
+  const transferId = body && body[0]
   console.log('process incoming-fulfill-condition', id)
 
-  // TODO should we just use a plain key-value store for this?
-  const transfer = await offsetFetch([{
-    topic: 'incoming-send-transfer',
-    partition: transferId,
-    maxNum: 1,
-    time: -1
-  }])
+  const transfer = sourceTransfers[transferId]
+  if (!transfer) {
+    console.error('no transfer found for fulfillment', id, 'transferId:', transferId)
+  }
 
   const fulfillment = body && body[1]
 
-  if (!tranfer || !fulfillment) {
+  if (!transfer || !fulfillment) {
     console.log('got incoming-fulfill-condition with no transfer or fulfillment. fulfillment: ', fulfillment, 'transfer:', transfer)
     // TODO do something
     return
   }
 
-  if (!hash(fulfillment).equals(Buffer.from(transfer.executionCondition, 'base64'))) {
-    console.log(`got incoming-fulfill-condition where fulfillment doesn't match condition. transfer: ${transferId}, fulfillment: ${fulfillment}, condition: ${transfer.executionCondition}`)
-  }
+  console.log('found transfer', id, transfer, 'for fulfillment:', fulfillment)
 
-  await util.promisify(producer.send.bind(producer))([{
-    topic: 'outgoing-fulfill-condition',
-    messages: Buffer.from(JSON.stringify({
-      id,
-      transferId,
-      fulfillment,
-      prefix: transfer.prefix,
-      method
-    })),
-    timestamp: Date.now()
-  }])
+  //if (!hash(fulfillment).equals(Buffer.from(transfer.executionCondition, 'base64'))) {
+    //console.log(`got incoming-fulfill-condition where fulfillment doesn't match condition. transfer: ${transferId}, fulfillment: ${fulfillment}, condition: ${transfer.executionCondition}`)
+  //}
+
+  try {
+    await util.promisify(producer.send.bind(producer))([{
+      topic: 'outgoing-fulfill-condition',
+      messages: Buffer.from(JSON.stringify({
+        id,
+        transferId,
+        fulfillment,
+        prefix: transfer.prefix,
+        method
+      })),
+      timestamp: Date.now()
+    }])
+  } catch (err) {
+    console.error('error producing to outgoing-fulfill-condition', id, err)
+  }
 })
 
 client.once('ready', () => console.log('listening for incoming-fulfill-condition'))
-consumer.on('error', error => console.error(error))
+incomingTransfer.on('error', error => console.error(error))
+incomingFulfill.on('error', error => console.error(error))
 producer.on('error', error => console.error(error))
 
 function hash (preimage) {
