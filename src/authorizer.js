@@ -1,9 +1,7 @@
 const kafka = require('kafka-node')
 const util = require('./util')
 const client = new kafka.Client('localhost:2181')
-const producer = new kafka.HighLevelProducer(client, {
-  partitionerType: 3 // keyed partitioner
-})
+const producer = new kafka.HighLevelProducer(client)
 const produce = util.promisify(producer.send.bind(producer))
 const consumer = new kafka.ConsumerGroup({
   host: 'localhost:2181',
@@ -24,29 +22,53 @@ consumer.on('message', async (message) => {
     switch (method) {
       case 'send_transfer':
         const sendTransferId = body && body[0] && body[0].id
-        await produce([{
-          topic: 'incoming-send-transfer',
-          messages: Buffer.from(JSON.stringify({ id, body, prefix, method })),
-          timestamp: Date.now(),
-          key: sendTransferId
-        }])
+        await Promise.all([
+          produce([{
+            topic: 'incoming-send-transfer',
+            messages: Buffer.from(JSON.stringify({ id, body, prefix, method })),
+            timestamp: Date.now()
+          }]),
+          produce([{
+            topic: 'incoming-rpc-responses',
+            messages: Buffer.from(JSON.stringify({ id, body: true })),
+            timestamp: Date.now()
+          }])
+        ])
         break
       case 'fulfill_condition':
         const fulfillTransferId = body && body[0]
-        await produce([{
-          topic: 'incoming-fulfill-condition',
-          messages: Buffer.from(JSON.stringify({ id, body, prefix, method })),
-          timestamp: Date.now(),
-          key: fulfillTransferId
-        }])
+        await Promise.all([
+          produce([{
+            topic: 'incoming-fulfill-condition',
+            messages: Buffer.from(JSON.stringify({ id, body, prefix, method })),
+            timestamp: Date.now()
+          }]),
+          produce([{
+            topic: 'incoming-rpc-responses',
+            messages: Buffer.from(JSON.stringify({ id, body: true })),
+            timestamp: Date.now()
+          }])
+        ])
         break
       case 'send_request':
         await produce([{
           topic: 'incoming-send-request',
           messages: Buffer.from(JSON.stringify({ id, body, prefix, method })),
-          timestamp: Date.now(),
-          key: id
+          timestamp: Date.now()
           // TODO is there an intelligent way to partiion requests?
+        }])
+        break
+      case 'get_info':
+        const info = {
+          currencyCode: 'USD',
+          currencyScale: 9,
+          prefix: prefix,
+          connectors: [ prefix + 'server' ]
+        }
+        await produce([{
+          topic: 'incoming-rpc-responses',
+          messages: Buffer.from(JSON.stringify({ id, body: info })),
+          timestamp: Date.now()
         }])
         break
 

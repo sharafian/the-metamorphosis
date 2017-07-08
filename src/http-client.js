@@ -23,21 +23,27 @@ outgoingRpcRequests.on('message', async (message) => {
 
   const { uri, token } = getPeerRpcInfo(prefix)
 
-  let response
+  let responseBody
+  let error
   try {
-    response = await agent
+    const response = await agent
       .post(uri)
       .query({ method, prefix })
       .set('Authorization', 'Bearer ' + token)
       .send(body)
+    responseBody = response.body
   } catch (err) {
     console.error(`error sending rpc request ${id} to ${prefix} (${uri})`, err)
+    error = {
+      status: 502,
+      responseBody: 'error sending rpc request'
+    }
   }
 
   try {
     await produce([{
       topic: 'outgoing-rpc-responses',
-      messages: Buffer.from(JSON.stringify({ id, method, prefix, body: response.body })),
+      messages: Buffer.from(JSON.stringify({ id, method, prefix, body: responseBody, error })),
       timestamp: Date.now()
     }])
   } catch (err) {

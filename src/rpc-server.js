@@ -15,7 +15,7 @@ const producer = new kafka.HighLevelProducer(client)
 const consumer = new kafka.ConsumerGroup({
   host: 'localhost:2181',
   groupId: 'rpcServer'
-}, 'incoming-send-request-responses')
+}, 'incoming-rpc-responses')
 client.once('ready', () => console.log('listening for incoming-send-request-responses'))
 client.on('error', error => console.error(error))
 consumer.on('error', error => console.error(error))
@@ -24,7 +24,7 @@ producer.on('error', error => console.error(error))
 const responder = new EventEmitter()
 consumer.on('message', (message) => {
   const data = JSON.parse(message.value)
-  console.log('process incoming-send-request-responses', data.id)
+  console.log('process incoming-rpc-responses', data.id)
 
   responder.emit(data.id, data)
 })
@@ -49,18 +49,20 @@ router.post('/rpc', async (ctx) => {
     }])
   } catch (err) {
     console.error('error producing to incoming-rpc-requests', id, err)
-  }
-
-  if (method === 'send_request') {
-    const response = await new Promise((resolve) => {
-      responder.on(id, data => resolve(data))
-    })
-
-    ctx.body = response.body
+    ctx.status = 500
     return
   }
 
-  ctx.body = true
+  const response = await new Promise((resolve) => {
+    responder.on(id, data => resolve(data))
+  })
+  if (response.error) {
+    ctx.status = response.error.status
+    ctx.body = response.error.body
+    return
+  }
+
+  ctx.body = response.body
 })
 
 const port = process.env.PORT || 8080

@@ -12,10 +12,11 @@ digraph streams {
   "rpc-server" -> "incoming-rpc-requests" -> "authorizer";
   "authorizer" -> "incoming-send-transfer" -> "connector";
   "authorizer" -> "incoming-send-request" -> "quoter";
+  "authorizer" -> "incoming-rpc-responses" -> "rpc-server";
   "authorizer" -> "incoming-fulfill-condition" -> "fulfiller";
   "connector" -> "outgoing-rpc-requests" -> "http-client";
-  "quoter" -> "outgoing-rpc-requests"
-  "http-client" -> "outgoing-rpc-responses" -> "quoter" -> "incoming-send-request-responses" -> "rpc-server";
+  "quoter" -> "outgoing-rpc-requests";
+  "http-client" -> "outgoing-rpc-responses" -> "quoter" -> "incoming-rpc-responses";
   "fulfiller" -> "outgoing-rpc-requests";
 
   { rank = same; "rpc-server" "incoming-rpc-requests" "authorizer" "incoming-send-transfer" "connector" "outgoing-rpc-requests" "http-client" }

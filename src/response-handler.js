@@ -17,7 +17,7 @@ consumer.on('message', async (message) => {
 
   try {
     await produce([{
-      topic: 'incoming-send-request-responses',
+      topic: 'incoming-rpc-responses',
       messages: Buffer.from(message.value, 'binary'),
       timestamp: Date.now()
     }])
