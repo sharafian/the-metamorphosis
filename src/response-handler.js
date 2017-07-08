@@ -14,7 +14,7 @@ consumer.on('message', async (message) => {
   console.log('process outgoing-rpc-responses', id)
 
   if (method !== 'send_request') return
-  
+
   await produce([{
     topic: 'incoming-send-request-responses',
     messages: Buffer.from(message.value, 'binary'),
@@ -22,5 +22,7 @@ consumer.on('message', async (message) => {
   }])
 })
 
-console.log('listening for outgoing-rpc-responses')
+client.once('ready', () => console.log('listening for outgoing-rpc-responses'))
 consumer.on('error', error => console.error(error))
+client.on('error', error => console.error(error))
+producer.on('error', error => console.error(error))

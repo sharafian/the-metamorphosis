@@ -16,7 +16,8 @@ const consumer = new kafka.ConsumerGroup({
   host: 'localhost:2181',
   groupId: 'rpcServer'
 }, 'incoming-send-request-responses')
-console.log('listening for incoming-send-request-responses')
+client.once('ready', () => console.log('listening for incoming-send-request-responses'))
+client.on('error', error => console.error(error))
 consumer.on('error', error => console.error(error))
 producer.on('error', error => console.error(error))
 
@@ -50,7 +51,7 @@ router.post('/rpc', async (ctx) => {
     const response = await new Promise((resolve) => {
       responder.on(id, data => resolve(data))
     })
-  
+
     ctx.body = response.body
     return
   }

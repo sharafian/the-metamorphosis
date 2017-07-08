@@ -40,7 +40,7 @@ function routeTransfer (prefix, packet) {
 }
 
 incomingTransfers.on('message', async (message) => {
-  const { id, body, method, prefix } = JSON.parse(message.value) 
+  const { id, body, method, prefix } = JSON.parse(message.value)
   console.log('process incoming-send-transfer', id)
 
   const transfer = body[0]
@@ -56,7 +56,7 @@ incomingTransfers.on('message', async (message) => {
     expiresAt: nextExpiry,
     executionCondition: transfer.executionCondition,
     ilp: transfer.ilp
-  } ] 
+  } ]
 
   await produce([{
     topic: 'outgoing-rpc-requests',
@@ -71,7 +71,7 @@ incomingTransfers.on('message', async (message) => {
 })
 
 incomingRequests.on('message', async (message) => {
-  const { id, body, method, prefix } = JSON.parse(message.value) 
+  const { id, body, method, prefix } = JSON.parse(message.value)
   console.log('process incoming-send-request', id)
   const request = body[0]
 
@@ -85,7 +85,7 @@ incomingRequests.on('message', async (message) => {
     ledger: nextHop.connectorLedger,
     to: nextHop.connectorAccount,
     ilp: request.ilp
-  } ] 
+  } ]
 
   await produce([{
     topic: 'outgoing-rpc-requests',
@@ -99,8 +99,12 @@ incomingRequests.on('message', async (message) => {
   }])
 })
 
-console.log('listening for incoming-send-transfer')
-console.log('listening for incoming-send-request')
+client.once('ready', () => {
+  console.log('listening for incoming-send-transfer')
+  console.log('listening for incoming-send-request')
+})
 
 incomingTransfers.on('error', error => console.error(error))
 incomingRequests.on('error', error => console.error(error))
+client.on('error', error => console.error(error))
+producer.on('error', error => console.error(error))
