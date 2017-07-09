@@ -1,6 +1,7 @@
 const Koa = require('koa')
 const Router = require('koa-router')
 const Parser = require('koa-bodyparser')
+const Cors = require('koa-cors')
 const kafka = require('kafka-node')
 const EventEmitter = require('events')
 const uuid = require('uuid')
@@ -9,6 +10,10 @@ const util = require('./util')
 const app = new Koa()
 const router = Router()
 const parser = Parser()
+const cors = Cors({
+  origin: '*',
+  methods: ['GET','POST']
+})
 
 const client = new kafka.Client('localhost:2181')
 const producer = new kafka.HighLevelProducer(client)
@@ -62,11 +67,13 @@ router.post('/rpc', async (ctx) => {
     return
   }
 
+  ctx.set('Access-Control-Allow-Origin', '*')
   ctx.body = response.body
 })
 
 const port = process.env.PORT || 8080
 app
+  .use(cors)
   .use(parser)
   .use(router.routes())
   .use(router.allowedMethods())
