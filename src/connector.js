@@ -5,34 +5,12 @@ const client = new kafka.Client('localhost:2181')
 const producer = new kafka.HighLevelProducer(client)
 const IlpPacket = require('ilp-packet')
 const produce = util.promisify(producer.send.bind(producer))
+const { getNextAmount, getNextHop } = require('./lib/routing')
 
-// TODO: split this shit up
 const incomingTransfers = new kafka.ConsumerGroup({
   host: 'localhost:2181',
   groupId: 'incomingTransfers'
 }, 'incoming-send-transfer')
-
-const incomingRequests = new kafka.ConsumerGroup({
-  host: 'localhost:2181',
-  groupId: 'incomingRequests'
-}, 'incoming-send-request')
-
-const routingTable = require('../config/routing-table.json')
-function getNextHop (destination) {
-  for (const route of routingTable) {
-    if (destination.startsWith(route.target)) {
-      return {
-        connectorLedger: route.ledger,
-        connectorAccount: route.connector
-      }
-    }
-  }
-  throw new Error('no route found to', destination)
-}
-
-function getNextAmount ({ sourceLedger, destinationLedger, amount }) {
-  return amount
-}
 
 function routeTransfer (prefix, packet) {
   const packetBuffer = Buffer.from(packet, 'base64')
@@ -53,7 +31,6 @@ incomingTransfers.on('message', async (message) => {
   console.log('process incoming-send-transfer', id)
 
   const transfer = body[0]
-
   const { nextHop, nextAmount } = routeTransfer(prefix, transfer.ilp)
   const nextExpiry = new Date(Date.parse(transfer.expiresAt) - 1000).toISOString()
 
@@ -84,46 +61,10 @@ incomingTransfers.on('message', async (message) => {
   }
 })
 
-incomingRequests.on('message', async (message) => {
-  const { id, body, method, prefix } = JSON.parse(message.value)
-  console.log('process incoming-send-request', id)
-  const request = body[0]
-
-  const packetReader = new Reader(Buffer.from(request.ilp, 'base64'))
-  packetReader.readUInt8()
-  packetReader.readLengthPrefix()
-  const account = packetReader.readVarOctetString().toString()
-  const nextHop = getNextHop(account)
-
-  const nextRequest = [ {
-    ledger: nextHop.connectorLedger,
-    to: nextHop.connectorAccount,
-    from: nextHop.connectorLedger + 'client',
-    ilp: request.ilp
-  } ]
-
-  try {
-    await produce([{
-      topic: 'outgoing-rpc-requests',
-      messages: Buffer.from(JSON.stringify({
-        id,
-        method,
-        prefix: nextHop.connectorLedger,
-        body: nextRequest
-      })),
-      timestamp: Date.now()
-    }])
-  } catch (err) {
-    console.error('error producing to outgoing-rpc-request', id, err)
-  }
-})
-
 client.once('ready', () => {
   console.log('listening for incoming-send-transfer')
-  console.log('listening for incoming-send-request')
 })
 
 incomingTransfers.on('error', error => console.error(error))
-incomingRequests.on('error', error => console.error(error))
 client.on('error', error => console.error(error))
 producer.on('error', error => console.error(error))
