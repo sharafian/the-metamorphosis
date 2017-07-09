@@ -8,6 +8,7 @@ const consumer = new kafka.ConsumerGroup({
   groupId: 'authorizer'
 }, 'incoming-rpc-requests')
 
+const peers = require('../config/peers')
 const allowedMethods = {
   'send_transfer': 'incoming-send-transfer',
   'fulfill_condition': 'incoming-fulfill-condition',
@@ -15,8 +16,22 @@ const allowedMethods = {
 }
 
 consumer.on('message', async (message) => {
-  const { id, body, method, prefix } = JSON.parse(message.value)
+  const { id, body, method, prefix, auth } = JSON.parse(message.value)
   console.log('process incoming-rpc-requests', id)
+  
+  const peer = peers[prefix]
+  if (!peer || auth !== 'Bearer ' + peer.token) {
+    console.log('denied unauthorized request for', prefix, 'with', auth)
+    await produce([{
+      topic: 'incoming-rpc-responses',
+      messages: Buffer.from(JSON.stringify({ id, error: {
+        status: 401,
+        body: 'Unauthorized'
+      } })),
+      timestamp: Date.now()
+    }])
+    return
+  }
 
   try {
     switch (method) {

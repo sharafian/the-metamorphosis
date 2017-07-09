@@ -1,4 +1,5 @@
 {
   "test.east.": { "uri": "http://ilp-kit2:4010/api/peers/rpc", "token": "placeholder" },
-  "test.west.": { "uri": "http://ilp-kit1:3010/api/peers/rpc", "token": "placeholder" }
+  "test.west.": { "uri": "http://ilp-kit1:3010/api/peers/rpc", "token": "placeholder" },
+  "test.south.": { "uri": "http://client:8080", "token": "secret" }
 }
