@@ -10,7 +10,7 @@ const consumer = new kafka.ConsumerGroup({
 
 const peers = require('../config/peers')
 const allowedMethods = {
-  'send_transfer': 'incoming-send-transfer',
+  'send_transfer': 'incoming-authorized-send-transfer',
   'fulfill_condition': 'incoming-fulfill-condition',
   'send_request': 'incoming-send-request'
 }
