@@ -9,6 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "bignumber.js": "^4.0.2",
     "ilp-packet": "^1.2.0",
     "kafka-node": "^1.6.2",
     "koa": "^2.3.0",

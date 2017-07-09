@@ -1,5 +1,6 @@
 const kafka = require('kafka-node')
 const util = require('./util')
+const peers = require('../config/peers')
 const client = new kafka.Client('localhost:2181')
 const producer = new kafka.HighLevelProducer(client)
 const produce = util.promisify(producer.send.bind(producer))
@@ -8,12 +9,6 @@ const consumer = new kafka.ConsumerGroup({
   groupId: 'authorizer'
 }, 'incoming-rpc-requests')
 
-const peers = require('../config/peers')
-const allowedMethods = {
-  'send_transfer': 'incoming-authorized-send-transfer',
-  'fulfill_condition': 'incoming-fulfill-condition',
-  'send_request': 'incoming-send-request'
-}
 
 consumer.on('message', async (message) => {
   const { id, body, method, prefix, auth } = JSON.parse(message.value)
@@ -39,7 +34,7 @@ consumer.on('message', async (message) => {
         const sendTransferId = body && body[0] && body[0].id
         await Promise.all([
           produce([{
-            topic: 'incoming-send-transfer',
+            topic: 'incoming-authorized-send-transfer',
             messages: Buffer.from(JSON.stringify({ id, body, prefix, method })),
             timestamp: Date.now()
           }]),
