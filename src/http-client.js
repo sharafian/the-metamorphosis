@@ -12,9 +12,9 @@ const outgoingFulfillCondition = new kafka.ConsumerGroup({
   host: 'localhost:2181'
 }, 'outgoing-fulfill-condition')
 
+const peers = require('../config/peers.json')
 function getPeerRpcInfo (prefix) {
-  return { 'test.east.': { uri: 'http://ilp-kit2:4010/api/peers/rpc', token: 'token' },
-    'test.west.': { uri: 'http://ilp-kit1:3010/api/peers/rpc', token: 'token' }}[prefix]
+  return peers[prefix]
 }
 
 outgoingRpcRequests.on('message', async (message) => {
