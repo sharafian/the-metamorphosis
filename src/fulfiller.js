@@ -38,7 +38,7 @@ incomingFulfill.on('message', async (message) => {
     return
   }
 
-  console.log('found transfer', id, transfer, 'for fulfillment:', fulfillment)
+  console.log('found transfer', id, 'for fulfillment:', fulfillment)
 
   if (!hash(fulfillment).equals(Buffer.from(transfer.executionCondition, 'base64'))) {
     console.log(`got incoming-fulfill-condition where fulfillment doesn't match condition. transfer: ${transferId}, fulfillment: ${fulfillment}, condition: ${transfer.executionCondition}`)
