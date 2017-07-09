@@ -17,8 +17,17 @@ const incomingRequests = new kafka.ConsumerGroup({
   groupId: 'incomingRequests'
 }, 'incoming-send-request')
 
+const routingTable = require('../config/routing-table.json')
 function getNextHop (destination) {
-  return { connectorLedger: 'test.east.', connectorAccount: 'test.east.server' }
+  for (const route of routingTable) {
+    if (destination.startsWith(route.target)) {
+      return {
+        connectorLedger: route.ledger,
+        connectorAccount: route.connector
+      }
+    }
+  }
+  throw new Error('no route found to', destination)
 }
 
 function getNextAmount ({ sourceLedger, destinationLedger, amount }) {
