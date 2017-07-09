@@ -1,3 +1,4 @@
 [ { "target": "test.dev.kit2", "ledger": "test.east.", "connector": "test.east.server" },
-  { "target": "test.dev.kit1", "ledger": "test.west.", "connector": "test.west.server" }
+  { "target": "test.dev.kit1", "ledger": "test.west.", "connector": "test.west.server" },
+  { "target": "test.south.", "ledger": "test.south.", "connector": "test.south.client" }
 ]
