@@ -3,6 +3,7 @@ digraph streams {
     node [ shape = box ];
     "rpc-server"
     "authorizer"
+    "balance"
     "connector"
     "http-client"
     "fulfiller"
@@ -10,7 +11,9 @@ digraph streams {
   }
 
   "rpc-server" -> "incoming-rpc-requests" -> "authorizer";
-  "authorizer" -> "incoming-send-transfer" -> "connector";
+  "authorizer" -> "incoming-authorized-send-transfer" -> "balance"
+  "balance" -> "incoming-send-transfer" -> "connector";
+  "incoming-fulfill-condition" -> "balance";
   "authorizer" -> "incoming-send-request" -> "quoter";
   "authorizer" -> "incoming-rpc-responses" -> "rpc-server";
   "authorizer" -> "incoming-fulfill-condition" -> "fulfiller";
@@ -19,7 +22,7 @@ digraph streams {
   "http-client" -> "outgoing-rpc-responses" -> "quoter" -> "incoming-rpc-responses";
   "fulfiller" -> "outgoing-rpc-requests";
 
-  { rank = same; "rpc-server" "incoming-rpc-requests" "authorizer" "incoming-send-transfer" "connector" "outgoing-rpc-requests" "http-client" }
+  { rank = same; "rpc-server" "incoming-rpc-requests" "authorizer" "incoming-authorized-send-transfer" "balance" "incoming-send-transfer" "connector" "outgoing-rpc-requests" "http-client" }
   { rank = source; "fulfiller" "incoming-fulfill-condition" }
 
 
