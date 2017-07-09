@@ -4,7 +4,8 @@ function getNextHop (destination) {
     if (destination.startsWith(route.target)) {
       return {
         connectorLedger: route.ledger,
-        connectorAccount: route.connector
+        connectorAccount: route.connector,
+        isLocal: !!route.local
       }
     }
   }
