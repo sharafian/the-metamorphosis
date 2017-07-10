@@ -2,13 +2,13 @@ const WebSocket = require('ws')
 const kafka = require('kafka-node')
 const util = require('./util')
 const client = new kafka.Client('localhost:2181')
-const offset = kafka.Offset(client)
+const offset = new kafka.Offset(client)
 const offsetFetch = util.promisify(offset.fetch.bind(offset))
 
 const port = 8081
 const server = new WebSocket.Server({ port })
 
-server.on('connection', (ws) => {
+server.on('connection', async (ws) => {
   // TODO check auth, filter by user
   console.log('got websocket connection')
   const client = new kafka.Client('localhost:2181')
