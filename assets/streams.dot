@@ -14,6 +14,7 @@ digraph streams {
   "authorizer" -> "incoming-send-request" -> "quoter";
   "authorizer" -> "incoming-rpc-responses" -> "rpc-server";
   "authorizer" -> "incoming-fulfill-condition" -> "fulfiller";
+  "incoming-send-transfer" -> "fulfiller";
   "connector" -> "outgoing-rpc-requests" -> "http-client";
   "quoter" -> "outgoing-rpc-requests";
   "http-client" -> "outgoing-rpc-responses" -> "quoter" -> "incoming-rpc-responses";
