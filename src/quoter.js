@@ -39,14 +39,14 @@ incomingRequests.on('message', async (message) => {
     if (type === IlpPacket.Type.TYPE_ILQP_BY_SOURCE_REQUEST) {
       const amount = uint64.twoNumbersToString(contentsReader.readUInt64())
       const hold = contentsReader.readUInt32()
-      response.ilp = IlpPacket.serializeIlqpBySourcResponse({
+      response.ilp = IlpPacket.serializeIlqpBySourceResponse({
         destinationAmount: amount,
         sourceHoldDuration: hold
       })
     } else if (type === IlpPacket.Type.TYPE_ILQP_BY_DESTINATION_REQUEST) {
       const amount = uint64.twoNumbersToString(contentsReader.readUInt64())
       const hold = contentsReader.readUInt32()
-      response.ilp = IlpPacket.serializeIlqpBySourcResponse({
+      response.ilp = IlpPacket.serializeIlqpByDestinationResponse({
         sourceAmount: amount,
         sourceHoldDuration: hold
       })
