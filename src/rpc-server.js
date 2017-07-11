@@ -53,6 +53,14 @@ function produceFulfillCondition ({ id, method, body, prefix }) {
   }])
 }
 
+function produceRejectIncomingTransfer ({ id, method, body, prefix }) {
+  return produce([{
+    topic: 'incoming-reject-incoming-transfer',
+    messages: Buffer.from(JSON.stringify({ id, body, prefix, method })),
+    timestamp: Date.now()
+  }])
+}
+
 function produceSendRequest ({ id, method, body, prefix }) {
   return produce([{
     topic: 'incoming-send-request',
@@ -86,9 +94,14 @@ router.post('/rpc', async (ctx) => {
   switch (method) {
     case 'send_transfer':
       await produceSendTransfer({ id, body, prefix, method })
+      ctx.body = true
       break
     case 'fulfill_condition':
       await produceFulfillCondition({ id, body, prefix, method })
+      ctx.body = true
+      break
+    case 'reject_incoming_transfer':
+      await produceRejectIncomingTransfer({ id, body, prefix, method })
       ctx.body = true
       break
     case 'send_request':
@@ -99,6 +112,7 @@ router.post('/rpc', async (ctx) => {
         ctx.body = response.error.body
         return
       }
+      console.log('quote response', response)
       ctx.body = response.body
       break
     case 'get_info':

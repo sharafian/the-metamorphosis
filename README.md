@@ -9,7 +9,7 @@
 ### Back end
 
 - [x] Combine RPC Server and Authorizer
-- [ ] Add rejector (passes back error messages)
+- [x] Add rejector (passes back error messages)
 - [ ] Add fixer.io + coinmarketcap for exchange rates (and tag ledgers with currency codes)
 - [ ] Implement route broadcaster for CCP
 - [ ] Dynamic routing table (Kafka? Zookeeper? Redis?)
