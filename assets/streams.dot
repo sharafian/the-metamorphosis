@@ -4,22 +4,21 @@ digraph streams {
     "rpc-server"
     "connector"
     "http-client"
-    "fulfiller"
+    "finalizer"
     "quoter"
   }
 
   "rpc-server" -> "incoming-send-transfer" -> "connector";
   "rpc-server" -> "incoming-send-request" -> "quoter";
-  "rpc-server" -> "incoming-fulfill-condition" -> "fulfiller";
+  "rpc-server" -> "incoming-fulfill-condition" -> "finalizer";
+  "rpc-server" -> "incoming-reject-incoming-transfer" -> "finalizer";
   "incoming-rpc-responses" -> "rpc-server";
-  "incoming-send-transfer" -> "fulfiller";
+  "incoming-send-transfer" -> "finalizer";
   "connector" -> "outgoing-rpc-requests" -> "http-client";
   "quoter" -> "outgoing-rpc-requests";
   "http-client" -> "outgoing-rpc-responses" -> "quoter" -> "incoming-rpc-responses";
-  "fulfiller" -> "outgoing-rpc-requests";
+  "finalizer" -> "outgoing-rpc-requests";
 
   { rank = same; "rpc-server" "incoming-send-transfer" "connector" "outgoing-rpc-requests" "http-client" }
-  { rank = source; "fulfiller" "incoming-fulfill-condition" }
-
-
+  { rank = source; "finalizer" "incoming-fulfill-condition" "incoming-reject-incoming-transfer" }
 }
