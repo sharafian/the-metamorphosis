@@ -75,6 +75,8 @@ router.post('/rpc', async (ctx) => {
   const auth = ctx.headers.authorization
   const id = uuid()
 
+  console.log('got rpc', id, method, prefix, body)
+
   if (!method || !prefix) {
     ctx.body = 'both method and prefix must be defined'
     ctx.status = 400
@@ -93,6 +95,7 @@ router.post('/rpc', async (ctx) => {
 
   switch (method) {
     case 'send_transfer':
+      // TODO check that the prefix matches the transfer.ledger
       await produceSendTransfer({ id, body, prefix, method })
       ctx.body = true
       break
