@@ -12,16 +12,21 @@ const incomingTransfers = new kafka.ConsumerGroup({
   groupId: 'incomingTransfers'
 }, 'incoming-send-transfer')
 
-function routeTransfer (prefix, packet) {
-  const packetBuffer = Buffer.from(packet, 'base64')
+async function routeTransfer (sourceTransfer) {
+  const packetBuffer = Buffer.from(sourceTransfer.ilp, 'base64')
   const { account, amount } = IlpPacket.deserializeIlpPayment(packetBuffer)
 
-  const nextHop = getNextHop(account)
-  const nextAmount = getNextAmount({
-    sourceLedger: prefix,
-    destinationLedger: nextHop,
-    amount: amount
-  })
+  const nextHop = await getNextHop(account)
+  let nextAmount
+  if (nextHop.isLocal) {
+    nextAmount = amount
+  } else {
+    nextAmount = await getNextAmount({
+      sourceLedger: sourceTransfer.ledger,
+      sourceAmount: sourceTransfer.amount,
+      destinationLedger: nextHop.connectorLedger,
+    })
+  }
 
   return { nextHop, nextAmount }
 }
@@ -31,10 +36,20 @@ incomingTransfers.on('message', async (message) => {
   console.log('process incoming-send-transfer', id)
 
   const transfer = body[0]
-  const { nextHop, nextAmount } = routeTransfer(prefix, transfer.ilp)
+  let nextHop
+  let nextAmount
+  try {
+    const routeResult = await routeTransfer(transfer)
+    nextHop = routeResult.nextHop
+    nextAmount = routeResult.nextAmount
+  } catch (err) {
+    // TODO send a reject message back
+    console.error('error routing transfer', id, err)
+    return
+  }
   const nextExpiry = new Date(Date.parse(transfer.expiresAt) - 1000).toISOString()
 
-  const nextTransfer = [ {
+  const nextTransfer = {
     id: transfer.id, // TODO: unwise
     ledger: nextHop.connectorLedger,
     to: nextHop.connectorAccount,
@@ -43,7 +58,9 @@ incomingTransfers.on('message', async (message) => {
     expiresAt: nextExpiry,
     executionCondition: transfer.executionCondition,
     ilp: transfer.ilp
-  } ]
+  }
+
+  console.log('constructed next transfer', id, nextTransfer)
 
   try {
     await produce([{
@@ -52,7 +69,7 @@ incomingTransfers.on('message', async (message) => {
         id,
         method,
         prefix: nextHop.connectorLedger,
-        body: nextTransfer
+        body: [nextTransfer]
       })),
       timestamp: Date.now()
     }])

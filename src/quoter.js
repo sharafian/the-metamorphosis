@@ -7,7 +7,7 @@ const IlpPacket = require('ilp-packet')
 const base64url = require('base64url')
 const uint64 = require('ilp-packet/dist/src/utils/uint64')
 const produce = util.promisify(producer.send.bind(producer))
-const { getNextAmount, getNextHop } = require('./lib/routing')
+const { getNextAmount, getPreviousAmount, getNextHop } = require('./lib/routing')
 
 const incomingRequests = new kafka.ConsumerGroup({
   host: 'localhost:2181',
@@ -18,6 +18,9 @@ const outgoingResponses = new kafka.ConsumerGroup({
   host: 'localhost:2181',
   groupId: 'responseHandler'
 }, 'outgoing-rpc-responses')
+
+// TODO use a real KV store or other method to associate requests and responses
+const outgoingQuoteRequests = {}
 
 incomingRequests.on('message', async (message) => {
   const { id, body, method, prefix } = JSON.parse(message.value)
@@ -41,42 +44,62 @@ incomingRequests.on('message', async (message) => {
   const packetReader = new Reader(Buffer.from(request.ilp, 'base64'))
   const type = packetReader.readUInt8()
   const contentsReader = new Reader(packetReader.readVarOctetString())
-  const account = contentsReader.readVarOctetString().toString('ascii')
-  const nextHop = getNextHop(account)
+  const destinationAccount = contentsReader.readVarOctetString().toString('ascii')
+  const nextHop = await getNextHop(destinationAccount)
 
+  console.log('quoter next hop:', nextHop)
+
+  // TODO handle when rate is not found (send errors back)
+
+  // Local quote
   if (nextHop.isLocal) {
-    const response = {
-      to: nextHop.connectorAccount,
-      ledger: nextHop.connectorLedger
-    }
 
+    let responsePacket
     if (type === IlpPacket.Type.TYPE_ILQP_BY_SOURCE_REQUEST) {
-      const amount = uint64.twoNumbersToString(contentsReader.readUInt64())
-      const hold = contentsReader.readUInt32()
-      response.ilp = IlpPacket.serializeIlqpBySourceResponse({
-        destinationAmount: amount,
-        sourceHoldDuration: hold
+      // apply our rate to the source amount
+      const sourceAmount = uint64.twoNumbersToString(contentsReader.readUInt64())
+      const destinationHoldDuration = contentsReader.readUInt32()
+      const destinationAmount = await getNextAmount({
+        sourceLedger: prefix,
+        destinationLedger: nextHop.connectorLedger,
+        sourceAmount
+      })
+      responsePacket = IlpPacket.serializeIlqpBySourceResponse({
+        destinationAmount,
+        sourceHoldDuration: destinationHoldDuration
       })
     } else if (type === IlpPacket.Type.TYPE_ILQP_BY_DESTINATION_REQUEST) {
-      const amount = uint64.twoNumbersToString(contentsReader.readUInt64())
-      const hold = contentsReader.readUInt32()
-      response.ilp = IlpPacket.serializeIlqpByDestinationResponse({
-        sourceAmount: amount,
-        sourceHoldDuration: hold
+      // apply our rate to the destination amount (because it's local)
+      const destinationAmount = uint64.twoNumbersToString(contentsReader.readUInt64())
+      const sourceAmount = await getPreviousAmount({
+        sourceLedger: prefix,
+        destinationLedger: nextHop.connectorLedger,
+        destinationAmount
+      })
+      const destinationHoldDuration = contentsReader.readUInt32()
+      responsePacket = IlpPacket.serializeIlqpByDestinationResponse({
+        sourceAmount,
+        sourceHoldDuration: destinationHoldDuration
       })
     } else if (type === IlpPacket.Type.TYPE_ILQP_LIQUIDITY_REQUEST) {
-      const hold = contentsReader.readUInt32()
-      response.ilp = IlpPacket.serializeIlqpLiquidityResponse({
+      // apply our rate to the curve
+      const destinationHoldDuration = contentsReader.readUInt32()
+      // TODO properly apply rate for liquidity response
+      responsePacket = IlpPacket.serializeIlqpLiquidityResponse({
         liquidityCurve: Buffer.from('00000000000000000000000000000000ffffffffffffffffffffffffffffffff', 'hex'),
         appliesToPrefix: nextHop.connectorLedger,
-        sourceHoldDuration: hold,
+        sourceHoldDuration: destinationHoldDuration,
         expiresAt: new Date(Date.now() + 10000)
       })
     }
 
-    console.log('returning local quote for', id)
-    response.ilp = base64url(response.ilp)
+    const response = {
+      to: nextHop.connectorAccount,
+      ledger: nextHop.connectorLedger,
+      ilp: base64url(responsePacket)
+    }
 
+    console.log('returning local quote for', id)
     await produce([{
       topic: 'incoming-rpc-responses',
       messages: Buffer.from(JSON.stringify({ id, body: response })),
@@ -84,36 +107,97 @@ incomingRequests.on('message', async (message) => {
     }])
 
     return
-  }
+  } else {
+    // Remote quotes
 
-  const nextRequest = [ {
-    ledger: nextHop.connectorLedger,
-    to: nextHop.connectorAccount,
-    from: nextHop.connectorLedger + 'client',
-    ilp: request.ilp
-  } ]
+    // When remote quoting by source amount we need to adjust
+    // the amount we ask our peer for by our rate
+    let nextIlpPacket
+    if (type === IlpPacket.Type.TYPE_ILQP_BY_SOURCE_REQUEST) {
+      const sourceAmount = uint64.twoNumbersToString(contentsReader.readUInt64())
+      const destinationHoldDuration = contentsReader.readUInt32()
+      const nextAmount = await getNextAmount({
+        sourceLedger: prefix,
+        destinationLedger: nextHop.connectorLedger,
+        sourceAmount
+      })
+      nextIlpPacket = IlpPacket.serializeIlqpBySourceRequest({
+        destinationAccount,
+        sourceAmount: nextAmount,
+        destinationHoldDuration
+      })
+    } else {
+      outgoingQuoteRequests[id] = { sourceLedger: prefix }
+      nextIlpPacket = request.ilp
+    }
 
-  try {
-    await produce([{
-      topic: 'outgoing-rpc-requests',
-      messages: Buffer.from(JSON.stringify({
-        id,
-        method,
-        prefix: nextHop.connectorLedger,
-        body: nextRequest
-      })),
-      timestamp: Date.now()
-    }])
-  } catch (err) {
-    console.error('error producing to outgoing-rpc-request', id, err)
+    // Remote quote
+    const nextRequest = [ {
+      ledger: nextHop.connectorLedger,
+      to: nextHop.connectorAccount,
+      from: nextHop.connectorLedger + 'client',
+      ilp: nextIlpPacket
+    } ]
+
+    try {
+      await produce([{
+        topic: 'outgoing-rpc-requests',
+        messages: Buffer.from(JSON.stringify({
+          id,
+          method,
+          prefix: nextHop.connectorLedger,
+          fromPrefix: prefix,
+          body: nextRequest
+        })),
+        timestamp: Date.now()
+      }])
+    } catch (err) {
+      console.error('error producing to outgoing-rpc-request', id, err)
+    }
   }
 })
 
 outgoingResponses.on('message', async (message) => {
-  const { id, method, body } = JSON.parse(message.value)
+  const { id, method, body, prefix } = JSON.parse(message.value)
   console.log('process outgoing-rpc-responses', id)
 
   if (method !== 'send_request') return
+
+  const packet = message.value
+  const packetReader = new Reader(Buffer.from(packet, 'base64'))
+  const type = packetReader.readUInt8()
+  const contentsReader = new Reader(packetReader.readVarOctetString())
+
+  let responseIlpPacket
+  // When responding to quote by destination amount requests
+  // we need to adjust the return value by our rate
+  if (type === IlpPacket.Type.TYPE_ILQP_BY_DESTINATION_RESPONSE) {
+    const quoteRequestDetails = outgoingQuoteRequests[id]
+    if (!quoteRequestDetails) {
+      // TODO make it so the messages are partitioned and each instance only gets
+      // responses to the quote requests it sent out
+      console.log('got quote response for quote we do not know about', message)
+      return
+    }
+    const sourceLedger = quoteResponseDetails.sourceLedger
+
+    const destinationAmount = uint64.twoNumbersToString(contentsReader.readUInt64())
+    const nextHoldDuration = contentsReader.readUInt32()
+    const sourceAmount = await getPreviousAmount({
+      sourceLedger,
+      destinationLedger: prefix,
+      destinationAmount
+    })
+    responseIlpPacket = IlpPacket.serializeIlqpByDestinationResponse({
+      sourceAmount,
+      sourceHoldDuration: nextHoldDuration
+    })
+  } else if (type === IlpPacket.Type.TYPE_ILQP_LIQUIDITY_RESPONSE) {
+    // TODO apply rate
+    responseIlpPacket = packet
+  } else {
+    responseIlpPacket = packet
+  }
 
   try {
     await produce([{

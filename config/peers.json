@@ -1,6 +1,6 @@
 {
-  "test.east.": { "uri": "http://ilp-kit2:4010/api/peers/rpc", "token": "placeholder", "broadcast": true },
-  "test.west.": { "uri": "http://ilp-kit1:3010/api/peers/rpc", "token": "placeholder", "broadcast": true },
-  "test.south.": { "uri": "http://client:3000", "token": "secret" },
-  "test.north.": { "uri": "http://localhost:9999", "token": "secret" }
+  "test.east.": { "uri": "http://ilp-kit2:4010/api/peers/rpc", "token": "placeholder", "broadcast": true, "currency": "USD" },
+  "test.west.": { "uri": "http://ilp-kit1:3010/api/peers/rpc", "token": "placeholder", "broadcast": true, "currency": "USD" },
+  "test.south.": { "uri": "http://client:3000", "token": "secret", "currency": "USD" },
+  "test.north.": { "uri": "http://localhost:9999", "token": "secret", "currency": "USD" }
 }
