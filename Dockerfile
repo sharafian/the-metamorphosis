@@ -27,4 +27,4 @@ RUN source $NVM_DIR/nvm.sh && npm install
 ENV PORT 3010
 EXPOSE 3010
 RUN echo 127.0.0.1\ moby >> /etc/hosts
-CMD sh ./start.sh
+CMD sh ./scripts/start.sh
