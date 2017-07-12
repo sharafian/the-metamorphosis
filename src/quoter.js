@@ -1,5 +1,5 @@
 const kafka = require('kafka-node')
-const { Reader } = require('oer-utils')
+const { Reader, Writer } = require('oer-utils')
 const util = require('./util')
 const client = new kafka.Client('localhost:2181')
 const producer = new kafka.HighLevelProducer(client)
@@ -8,6 +8,9 @@ const base64url = require('base64url')
 const uint64 = require('ilp-packet/dist/src/utils/uint64')
 const produce = util.promisify(producer.send.bind(producer))
 const { getNextAmount, getPreviousAmount, getNextHop } = require('./lib/routing')
+const BigNumber = require('bignumber.js')
+
+const RATE_EXPIRY_DURATION = 360000
 
 const incomingRequests = new kafka.ConsumerGroup({
   host: 'localhost:2181',
@@ -84,12 +87,27 @@ incomingRequests.on('message', async (message) => {
     } else if (type === IlpPacket.Type.TYPE_ILQP_LIQUIDITY_REQUEST) {
       // apply our rate to the curve
       const destinationHoldDuration = contentsReader.readUInt32()
-      // TODO properly apply rate for liquidity response
+      // TODO base max amount on max payment size
+      const probeSourceAmount = new BigNumber(1000000000000)
+      const sourceAmountHex = probeSourceAmount.toString(16)
+      const probeDestinationAmount = await getNextAmount({
+        sourceLedger: prefix,
+        destinationLedger: nextHop.connectorLedger,
+        sourceAmount: probeSourceAmount
+      })
+      const destinationAmountHex = probeDestinationAmount.toString(16)
+      // TODO there's probably a more elegant way of working with liquidity curves
+      const liquidityCurve = Buffer.concat([
+        // TODO base minimum amount on min payment size
+        Buffer.from('00000000000000000000000000000000', 'hex'), // [0,0]
+        Buffer.from('0'.repeat(16 - sourceAmountHex.length) + sourceAmountHex, 'hex'),
+        Buffer.from('0'.repeat(16 - destinationAmountHex.length) + destinationAmountHex, 'hex')
+      ])
       responsePacket = IlpPacket.serializeIlqpLiquidityResponse({
-        liquidityCurve: Buffer.from('00000000000000000000000000000000ffffffffffffffffffffffffffffffff', 'hex'),
+        liquidityCurve,
         appliesToPrefix: nextHop.connectorLedger,
         sourceHoldDuration: destinationHoldDuration,
-        expiresAt: new Date(Date.now() + 10000)
+        expiresAt: new Date(Date.now() + RATE_EXPIRY_DURATION)
       })
     }
 
@@ -193,8 +211,38 @@ outgoingResponses.on('message', async (message) => {
       sourceHoldDuration: nextHoldDuration
     })
   } else if (type === IlpPacket.Type.TYPE_ILQP_LIQUIDITY_RESPONSE) {
-    // TODO apply rate
-    responseIlpPacket = packet
+    // apply our rate to the liquidity curve we got back from the quote
+    // TODO do we really need to support liquidity curve quoting?
+
+    const quoteRequestDetails = outgoingQuoteRequests[id]
+    if (!quoteRequestDetails) {
+      // TODO make it so the messages are partitioned and each instance only gets
+      // responses to the quote requests it sent out
+      console.log('got quote response for quote we do not know about', message)
+      return
+    }
+    const sourceLedger = quoteResponseDetails.sourceLedger
+
+    const numPoints = packetReader.readVarUInt()
+    const liquidityCurve = packetReader.readOctetString(numPoints * 16)
+    const rate = await getRate({
+      sourceLedger,
+      destinationLedger: prefix
+    })
+    const appliesToPrefix = packetReader.readVarOctetString()
+    // TODO add time to the hold duration
+    const sourceHoldDuration = packetReader.readUInt32()
+    const expiresAt = Date.parse(packetReader.readVarOctetString().toString('ascii'))
+    const ourQuoteExpiry = Date.parse(Date.now() + RATE_EXPIRY_DURATION)
+
+    const newCurve = applyRateToLiquidityCurve({ rate, liquidityCurve })
+    responseIlpPacket = IlpPacket.serializeIlqpLiquidityResponse({
+      liquidityCurve: newCurve,
+      appliesToPrefix,
+      sourceHoldDuration,
+      expiresAt: new Date(Math.min(expiresAt, ourQuoteExpiry))
+    })
+
   } else {
     responseIlpPacket = packet
   }
@@ -202,13 +250,34 @@ outgoingResponses.on('message', async (message) => {
   try {
     await produce([{
       topic: 'incoming-rpc-responses',
-      messages: Buffer.from(message.value, 'binary'),
+      messages: responseIlpPacket,
       timestamp: Date.now()
     }])
   } catch (err) {
     console.error('error producing to incoming-send-request-responses', id, err)
   }
 })
+
+function applyRateToLiquidityCurve ({ rate, liquidityCurve }) {
+  let index
+  const writer = new Writer()
+  const reader = Reader.from(liquidityCurve)
+  while (index < liquidityCurve.length) {
+    // divide source amount by rate
+    // TODO avoid translating the format so many times, it's probably pretty slow
+    const sourceAmount = uint64.twoNumbersToString(reader.readUInt64())
+    const newSourceAmount = new BigNumber(sourceAmount)
+      .div(rate)
+      .round()
+      .toString(10)
+    const newSourceAmount64 =
+    writer.writeUInt64(uint64.stringToTwoNumbers(newSourceAmount))
+
+    // leave destination amount unchanged
+    writer.writeUInt64(reader.readUInt64())
+  }
+  return writer.getBuffer()
+}
 
 client.once('ready', () => {
   console.log('listening for incoming-send-request')

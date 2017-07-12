@@ -9,8 +9,11 @@ let rates = {}
 // TODO put this in a real data store
 
 for (let peer of Object.keys(peers)) {
-  if (!peers[peer].currency) {
-    throw new Error('Currency must be specified for peer: ' + peer)
+  if (!peers[peer].currencyCode) {
+    throw new Error('currencyCode must be specified for peer: ' + peer)
+  }
+  if (!peers[peer].currencyScale) {
+    throw new Error('currencyScale must be specified for peer: ' + peer)
   }
 }
 loadRates()
@@ -55,8 +58,8 @@ async function getPreviousAmount ({ sourceLedger, destinationLedger, destination
 
 async function getRate ({ sourceLedger, destinationLedger }) {
   console.log('get rate', sourceLedger, destinationLedger)
-  const sourceCurrency = peers[sourceLedger].currency.toUpperCase()
-  const destinationCurrency = peers[destinationLedger].currency.toUpperCase()
+  const sourceCurrency = peers[sourceLedger].currencyCode.toUpperCase()
+  const destinationCurrency = peers[destinationLedger].currencyCode.toUpperCase()
 
   await loadRates()
 
@@ -70,13 +73,19 @@ async function getRate ({ sourceLedger, destinationLedger }) {
     throw new Error(`No rate found for currency ${destinationCurrency} (ledger: ${destinationLedger})`)
   }
 
+  const scaleToShiftRateBy = new BigNumber(peers[destinationLedger].currencyScale)
+    .minus(peers[sourceLedger].currencyScale)
+
   const rate = new BigNumber(destinationRate)
     .div(sourceRate)
+    .shift(scaleToShiftRateBy)
+
   return rate
 }
 
 module.exports = {
   getNextHop,
   getNextAmount,
-  getPreviousAmount
+  getPreviousAmount,
+  getRate
 }
