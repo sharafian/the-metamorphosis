@@ -4,6 +4,7 @@ const BigNumber = require('bignumber.js')
 const request = require('superagent')
 
 const FIXERIO_URL = 'https://api.fixer.io/latest'
+const COINMARKETCAP_URL = 'https://api.coinmarketcap.com/v1/ticker/'
 
 let rates = {}
 // TODO put this in a real data store
@@ -20,9 +21,23 @@ loadRates()
 
 async function loadRates () {
   if (!rates.base) {
-    const rateResponse = (await request.get(FIXERIO_URL)).body
-    rates = rateResponse.rates
-    rates[rateResponse.base] = 1
+    const fixerioResponse = (await request.get(FIXERIO_URL)).body
+    rates = fixerioResponse.rates
+    rates[fixerioResponse.base] = 1
+
+    const coinmarketResponse = (await request.get(COINMARKETCAP_URL)).body
+    for (let coinmarketRate of coinmarketResponse) {
+      if (!coinmarketRate.price_usd) {
+        continue
+      }
+      const eurRate = new BigNumber(coinmarketRate.price_usd)
+        .times(rates.USD)
+        .round(8)
+        .toString()
+
+      rates[coinmarketRate.symbol] = eurRate
+    }
+    console.log('loaded rates', rates)
   }
 }
 
