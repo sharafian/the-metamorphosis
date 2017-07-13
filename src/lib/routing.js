@@ -8,6 +8,7 @@ const COINMARKETCAP_URL = 'https://api.coinmarketcap.com/v1/ticker/'
 
 let rates = {}
 // TODO put this in a real data store
+// TODO don't use global variables
 
 for (let peer of Object.keys(peers)) {
   if (!peers[peer].currencyCode) {
@@ -17,7 +18,7 @@ for (let peer of Object.keys(peers)) {
     throw new Error('currencyScale must be specified for peer: ' + peer)
   }
 }
-loadRates()
+loadRates().catch((err) => console.error('error getting rates', err))
 
 async function loadRates () {
   if (!rates.base) {
@@ -41,7 +42,7 @@ async function loadRates () {
   }
 }
 
-async function getNextHop (destination) {
+function getNextHop (destination) {
   for (const route of routingTable) {
     if (destination.startsWith(route.target)) {
       return {
@@ -54,16 +55,16 @@ async function getNextHop (destination) {
   throw new Error('No route found to ledger: ' + destination)
 }
 
-async function getNextAmount ({ previousLedger, nextLedger, previousAmount }) {
-  const rate = await getRate({ previousLedger, nextLedger })
+function getNextAmount ({ previousLedger, nextLedger, previousAmount }) {
+  const rate = getRate({ previousLedger, nextLedger })
   const nextAmount = rate.times(previousAmount)
     .round() // TODO figure out right rounding direction
     .toString()
   return nextAmount
 }
 
-async function getPreviousAmount ({ previousLedger, nextLedger, nextAmount }) {
-  const rate = await getRate({ previousLedger, nextLedger })
+function getPreviousAmount ({ previousLedger, nextLedger, nextAmount }) {
+  const rate = getRate({ previousLedger, nextLedger })
   const previousAmount = new BigNumber(nextAmount)
     .div(rate)
     .round() // TODO figure out right rounding direction
@@ -71,12 +72,10 @@ async function getPreviousAmount ({ previousLedger, nextLedger, nextAmount }) {
   return previousAmount
 }
 
-async function getRate ({ previousLedger, nextLedger }) {
+function getRate ({ previousLedger, nextLedger }) {
   console.log('get rate', previousLedger, nextLedger)
   const previousCurrency = peers[previousLedger].currencyCode.toUpperCase()
   const nextCurrency = peers[nextLedger].currencyCode.toUpperCase()
-
-  await loadRates()
 
   const nextRate = rates[nextCurrency]
   const previousRate = rates[previousCurrency]
@@ -98,9 +97,33 @@ async function getRate ({ previousLedger, nextLedger }) {
   return rate
 }
 
+// Divide each source amount by the rate and return a new curve
+function applyRateToLiquidityCurve ({ rate, liquidityCurve }) {
+  const writer = new Writer()
+  const reader = Reader.from(liquidityCurve)
+  const numPoints = liquidityCurve.length / 16 // each point is 16 bytes
+  for (let i = 0; i < numPoints; i++) {
+    // divide source amount by rate
+    // TODO avoid translating the format so many times, it's probably pretty slow
+    const sourceAmount = uint64.twoNumbersToString(reader.readUInt64())
+    const newSourceAmount = new BigNumber(sourceAmount)
+      .div(rate)
+      .round()
+      .toString(10)
+    const newSourceAmount64 =
+    writer.writeUInt64(uint64.stringToTwoNumbers(newSourceAmount))
+
+    // leave destination amount unchanged
+    writer.writeUInt64(reader.readUInt64())
+  }
+  return writer.getBuffer()
+}
+
+
 module.exports = {
   getNextHop,
   getNextAmount,
   getPreviousAmount,
-  getRate
+  getRate,
+  applyRateToLiquidityCurve
 }

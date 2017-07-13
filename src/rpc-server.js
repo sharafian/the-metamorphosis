@@ -115,7 +115,6 @@ router.post('/rpc', async (ctx) => {
         ctx.body = response.error.body
         return
       }
-      console.log('quote response', response)
       ctx.body = response.body
       break
     case 'get_info':

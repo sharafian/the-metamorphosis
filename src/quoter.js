@@ -7,7 +7,7 @@ const IlpPacket = require('ilp-packet')
 const base64url = require('base64url')
 const uint64 = require('ilp-packet/dist/src/utils/uint64')
 const produce = util.promisify(producer.send.bind(producer))
-const { getNextAmount, getPreviousAmount, getNextHop } = require('./lib/routing')
+const { getNextAmount, getPreviousAmount, getNextHop, applyRateToLiquidityCurve } = require('./lib/routing')
 const BigNumber = require('bignumber.js')
 
 const RATE_EXPIRY_DURATION = 360000
@@ -26,7 +26,18 @@ const outgoingResponses = new kafka.ConsumerGroup({
 // TODO use a real KV store or other method to associate requests and responses
 const outgoingQuoteRequests = {}
 
-incomingRequests.on('message', async (message) => {
+client.once('ready', () => {
+  console.log('listening for incoming-send-request')
+  console.log('listening for outgoing-rpc-responses')
+})
+client.on('error', error => console.error(error))
+incomingRequests.on('message', handleIncomingRequests)
+incomingRequests.on('error', error => console.error(error))
+outgoingResponses.on('message', handleOutgoingResponses)
+outgoingResponses.on('error', error => console.error(error))
+producer.on('error', error => console.error(error))
+
+async function handleIncomingRequests (message) {
   const { id, body, method, prefix } = JSON.parse(message.value)
   console.log('process incoming-send-request', id)
   const request = body[0]
@@ -49,7 +60,7 @@ incomingRequests.on('message', async (message) => {
   const type = packetReader.readUInt8()
   const contentsReader = new Reader(packetReader.readVarOctetString())
   const destinationAccount = contentsReader.readVarOctetString().toString('ascii')
-  const nextHop = await getNextHop(destinationAccount)
+  const nextHop = getNextHop(destinationAccount)
 
   console.log('quoter next hop:', nextHop)
 
@@ -64,7 +75,7 @@ incomingRequests.on('message', async (message) => {
 
       const previousAmount = uint64.twoNumbersToString(contentsReader.readUInt64())
       const destinationHoldDuration = contentsReader.readUInt32()
-      const destinationAmount = await getNextAmount({
+      const destinationAmount = getNextAmount({
         previousLedger: prefix,
         nextLedger: nextHop.connectorLedger,
         previousAmount
@@ -77,7 +88,7 @@ incomingRequests.on('message', async (message) => {
       // Apply our rate to the destination amount (because it's local)
 
       const destinationAmount = uint64.twoNumbersToString(contentsReader.readUInt64())
-      const previousAmount = await getPreviousAmount({
+      const previousAmount = getPreviousAmount({
         previousLedger: prefix,
         nextLedger: nextHop.connectorLedger,
         nextAmount
@@ -94,7 +105,7 @@ incomingRequests.on('message', async (message) => {
       // TODO base max amount on max payment size
       const probePreviousAmount = new BigNumber(1000000000000)
       const previousAmountHex = probePreviousAmount.toString(16)
-      const probeDestinationAmount = await getNextAmount({
+      const probeDestinationAmount = getNextAmount({
         previousLedger: prefix,
         nextLedger: nextHop.connectorLedger,
         previousAmount: probePreviousAmount
@@ -127,8 +138,6 @@ incomingRequests.on('message', async (message) => {
       messages: Buffer.from(JSON.stringify({ id, body: response })),
       timestamp: Date.now()
     }])
-
-    return
   } else {
     // Remote quotes
 
@@ -138,7 +147,7 @@ incomingRequests.on('message', async (message) => {
     if (type === IlpPacket.Type.TYPE_ILQP_BY_SOURCE_REQUEST) {
       const previousAmount = uint64.twoNumbersToString(contentsReader.readUInt64())
       const destinationHoldDuration = contentsReader.readUInt32()
-      const nextAmount = await getNextAmount({
+      const nextAmount = getNextAmount({
         previousLedger: prefix,
         nextLedger: nextHop.connectorLedger,
         previousAmount
@@ -179,13 +188,27 @@ incomingRequests.on('message', async (message) => {
       console.error('error producing to outgoing-rpc-request', id, err)
     }
   }
-})
+}
 
-outgoingResponses.on('message', async (message) => {
-  const { id, method, body, prefix } = JSON.parse(message.value)
+async function handleOutgoingResponses (message) {
+  const { id, method, prefix, body, error } = JSON.parse(message.value)
   console.log('process outgoing-rpc-responses', id)
 
   if (method !== 'send_request') return
+
+  if (error) {
+    try {
+      await produce([{
+        topic: 'incoming-rpc-responses',
+        messages: Buffer.from(JSON.stringify({
+          error
+        }), 'utf8'),
+        timestamp: Date.now()
+      }])
+    } catch (err) {
+      console.error('error producing to incoming-send-request-responses', id, err)
+    }
+  }
 
   const packet = message.value
   const packetReader = new Reader(Buffer.from(packet, 'base64'))
@@ -205,11 +228,11 @@ outgoingResponses.on('message', async (message) => {
       console.log('got quote response for quote we do not know about', message)
       return
     }
-    const previousLedger = quoteResponseDetails.previousLedger
+    const previousLedger = quoteRequestDetails.previousLedger
 
     const nextAmount = uint64.twoNumbersToString(contentsReader.readUInt64())
     const nextHoldDuration = contentsReader.readUInt32()
-    const previousAmount = await getPreviousAmount({
+    const previousAmount = getPreviousAmount({
       previousLedger,
       nextLedger: prefix,
       nextAmount
@@ -221,7 +244,6 @@ outgoingResponses.on('message', async (message) => {
   } else if (type === IlpPacket.Type.TYPE_ILQP_LIQUIDITY_RESPONSE) {
     // Apply our rate to the liquidity curve we got back from the quote
 
-    // TODO do we really need to support liquidity curve quoting?
     const quoteRequestDetails = outgoingQuoteRequests[id]
     if (!quoteRequestDetails) {
       // TODO make it so the messages are partitioned and each instance only gets
@@ -229,11 +251,11 @@ outgoingResponses.on('message', async (message) => {
       console.log('got quote response for quote we do not know about', message)
       return
     }
-    const previousLedger = quoteResponseDetails.previousLedger
+    const previousLedger = quoteRequestDetails.previousLedger
 
     const numPoints = packetReader.readVarUInt()
     const liquidityCurve = packetReader.readOctetString(numPoints * 16)
-    const rate = await getRate({
+    const rate = getRate({
       previousLedger,
       nextLedger: prefix
     })
@@ -258,42 +280,13 @@ outgoingResponses.on('message', async (message) => {
   try {
     await produce([{
       topic: 'incoming-rpc-responses',
-      messages: responseIlpPacket,
+      messages: Buffer.from(JSON.stringify({
+        body: responseIlpPacket.toString('base64')
+      }), 'utf8'),
       timestamp: Date.now()
     }])
   } catch (err) {
     console.error('error producing to incoming-send-request-responses', id, err)
   }
-})
-
-// Divide each source amount by the rate and return a new curve
-function applyRateToLiquidityCurve ({ rate, liquidityCurve }) {
-  let index
-  const writer = new Writer()
-  const reader = Reader.from(liquidityCurve)
-  while (index < liquidityCurve.length) {
-    // divide source amount by rate
-    // TODO avoid translating the format so many times, it's probably pretty slow
-    const sourceAmount = uint64.twoNumbersToString(reader.readUInt64())
-    const newSourceAmount = new BigNumber(sourceAmount)
-      .div(rate)
-      .round()
-      .toString(10)
-    const newSourceAmount64 =
-    writer.writeUInt64(uint64.stringToTwoNumbers(newSourceAmount))
-
-    // leave destination amount unchanged
-    writer.writeUInt64(reader.readUInt64())
-  }
-  return writer.getBuffer()
 }
 
-client.once('ready', () => {
-  console.log('listening for incoming-send-request')
-  console.log('listening for outgoing-rpc-responses')
-})
-
-incomingRequests.on('error', error => console.error(error))
-outgoingResponses.on('error', error => console.error(error))
-client.on('error', error => console.error(error))
-producer.on('error', error => console.error(error))
