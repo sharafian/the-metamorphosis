@@ -6,6 +6,7 @@ digraph streams {
     "http-client"
     "finalizer"
     "quoter"
+    "broadcaster"
   }
 
   "rpc-server" -> "incoming-send-transfer" -> "connector";
@@ -18,6 +19,7 @@ digraph streams {
   "quoter" -> "outgoing-rpc-requests";
   "http-client" -> "outgoing-rpc-responses" -> "quoter" -> "incoming-rpc-responses";
   "finalizer" -> "outgoing-rpc-requests";
+  "broadcaster" -> "outgoing-rpc-requests";
 
   { rank = same; "rpc-server" "incoming-send-transfer" "connector" "outgoing-rpc-requests" "http-client" }
   { rank = source; "finalizer" "incoming-fulfill-condition" "incoming-reject-incoming-transfer" }

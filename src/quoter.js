@@ -24,6 +24,20 @@ incomingRequests.on('message', async (message) => {
   console.log('process incoming-send-request', id)
   const request = body[0]
 
+  // respond to route broadcasts so we don't look like we're down
+  if (request.custom && request.custom.method === 'broadcast_routes') {
+    await produce([{
+      topic: 'incoming-rpc-responses',
+      messages: Buffer.from(JSON.stringify({ id, body: {
+        to: request.to,
+        from: request.from,
+        ledger: prefix
+      } })),
+      timestamp: Date.now()
+    }])
+    return
+  }
+
   const packetReader = new Reader(Buffer.from(request.ilp, 'base64'))
   const type = packetReader.readUInt8()
   const contentsReader = new Reader(packetReader.readVarOctetString())
