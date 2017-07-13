@@ -1,9 +1,10 @@
 FROM ubuntu
 RUN apt-get update && apt-get install -yq \
+    build-essential \
     default-jre \
     vim \
+    wget \
     zookeeperd
-RUN apt-get install -yq wget
 RUN wget "http://www-eu.apache.org/dist/kafka/0.11.0.0/kafka_2.11-0.11.0.0.tgz" -O kafka.tgz
 RUN tar -xzvf kafka.tgz --strip 1
 # Replace shell with bash so we can source files
@@ -22,9 +23,14 @@ RUN wget -qO- https://raw.githubusercontent.com/creationix/nvm/v0.33.1/install.s
 ENV NODE_PATH $NVM_DIR/v$NODE_VERSION/lib/node_modules
 ENV PATH      $NVM_DIR/v$NODE_VERSION/bin:$PATH
 
-ADD . .
+WORKDIR /app
+
+ADD package.json /app
 RUN source $NVM_DIR/nvm.sh && npm install
+
+# postponed this step, for more efficient rebuild while debugging the repo contents,
+ADD . /app
+
 ENV PORT 3010
 EXPOSE 3010
-RUN echo 127.0.0.1\ moby >> /etc/hosts
 CMD sh ./scripts/start.sh
