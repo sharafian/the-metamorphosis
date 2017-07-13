@@ -54,45 +54,45 @@ async function getNextHop (destination) {
   throw new Error('No route found to ledger: ' + destination)
 }
 
-async function getNextAmount ({ sourceLedger, destinationLedger, sourceAmount }) {
-  const rate = await getRate({ sourceLedger, destinationLedger })
-  const nextAmount = rate.times(sourceAmount)
+async function getNextAmount ({ previousLedger, nextLedger, previousAmount }) {
+  const rate = await getRate({ previousLedger, nextLedger })
+  const nextAmount = rate.times(previousAmount)
     .round() // TODO figure out right rounding direction
     .toString()
   return nextAmount
 }
 
-async function getPreviousAmount ({ sourceLedger, destinationLedger, destinationAmount }) {
-  const rate = await getRate({ sourceLedger, destinationLedger })
-  const previousAmount = new BigNumber(destinationAmount)
+async function getPreviousAmount ({ previousLedger, nextLedger, nextAmount }) {
+  const rate = await getRate({ previousLedger, nextLedger })
+  const previousAmount = new BigNumber(nextAmount)
     .div(rate)
     .round() // TODO figure out right rounding direction
     .toString()
   return previousAmount
 }
 
-async function getRate ({ sourceLedger, destinationLedger }) {
-  console.log('get rate', sourceLedger, destinationLedger)
-  const sourceCurrency = peers[sourceLedger].currencyCode.toUpperCase()
-  const destinationCurrency = peers[destinationLedger].currencyCode.toUpperCase()
+async function getRate ({ previousLedger, nextLedger }) {
+  console.log('get rate', previousLedger, nextLedger)
+  const previousCurrency = peers[previousLedger].currencyCode.toUpperCase()
+  const nextCurrency = peers[nextLedger].currencyCode.toUpperCase()
 
   await loadRates()
 
-  const destinationRate = rates[destinationCurrency]
-  const sourceRate = rates[sourceCurrency]
+  const nextRate = rates[nextCurrency]
+  const previousRate = rates[previousCurrency]
 
-  if (!sourceRate) {
-    throw new Error(`No rate found for currency ${sourceCurrency} (ledger: ${sourceLedger})`)
+  if (!previousRate) {
+    throw new Error(`No rate found for currency ${previousCurrency} (ledger: ${previousLedger})`)
   }
-  if (!destinationRate) {
-    throw new Error(`No rate found for currency ${destinationCurrency} (ledger: ${destinationLedger})`)
+  if (!nextRate) {
+    throw new Error(`No rate found for currency ${nextCurrency} (ledger: ${nextLedger})`)
   }
 
-  const scaleToShiftRateBy = new BigNumber(peers[destinationLedger].currencyScale)
-    .minus(peers[sourceLedger].currencyScale)
+  const scaleToShiftRateBy = new BigNumber(peers[nextLedger].currencyScale)
+    .minus(peers[previousLedger].currencyScale)
 
-  const rate = new BigNumber(destinationRate)
-    .div(sourceRate)
+  const rate = new BigNumber(nextRate)
+    .div(previousRate)
     .shift(scaleToShiftRateBy)
 
   return rate

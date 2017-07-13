@@ -11,6 +11,7 @@ const { getNextAmount, getPreviousAmount, getNextHop } = require('./lib/routing'
 const BigNumber = require('bignumber.js')
 
 const RATE_EXPIRY_DURATION = 360000
+const MIN_MESSAGE_WINDOW = 1000
 
 const incomingRequests = new kafka.ConsumerGroup({
   host: 'localhost:2181',
@@ -59,64 +60,67 @@ incomingRequests.on('message', async (message) => {
 
     let responsePacket
     if (type === IlpPacket.Type.TYPE_ILQP_BY_SOURCE_REQUEST) {
-      // apply our rate to the source amount
-      const sourceAmount = uint64.twoNumbersToString(contentsReader.readUInt64())
+      // Apply our rate to the source amount
+
+      const previousAmount = uint64.twoNumbersToString(contentsReader.readUInt64())
       const destinationHoldDuration = contentsReader.readUInt32()
       const destinationAmount = await getNextAmount({
-        sourceLedger: prefix,
-        destinationLedger: nextHop.connectorLedger,
-        sourceAmount
+        previousLedger: prefix,
+        nextLedger: nextHop.connectorLedger,
+        previousAmount
       })
       responsePacket = IlpPacket.serializeIlqpBySourceResponse({
         destinationAmount,
-        sourceHoldDuration: destinationHoldDuration
+        sourceHoldDuration: destinationHoldDuration + MIN_MESSAGE_WINDOW
       })
     } else if (type === IlpPacket.Type.TYPE_ILQP_BY_DESTINATION_REQUEST) {
-      // apply our rate to the destination amount (because it's local)
+      // Apply our rate to the destination amount (because it's local)
+
       const destinationAmount = uint64.twoNumbersToString(contentsReader.readUInt64())
-      const sourceAmount = await getPreviousAmount({
-        sourceLedger: prefix,
-        destinationLedger: nextHop.connectorLedger,
-        destinationAmount
+      const previousAmount = await getPreviousAmount({
+        previousLedger: prefix,
+        nextLedger: nextHop.connectorLedger,
+        nextAmount
       })
       const destinationHoldDuration = contentsReader.readUInt32()
       responsePacket = IlpPacket.serializeIlqpByDestinationResponse({
-        sourceAmount,
-        sourceHoldDuration: destinationHoldDuration
+        sourceAmount: previousAmount,
+        sourceHoldDuration: destinationHoldDuration + MIN_MESSAGE_WINDOW
       })
     } else if (type === IlpPacket.Type.TYPE_ILQP_LIQUIDITY_REQUEST) {
-      // apply our rate to the curve
+      // Apply our rate to the curve
+
       const destinationHoldDuration = contentsReader.readUInt32()
       // TODO base max amount on max payment size
-      const probeSourceAmount = new BigNumber(1000000000000)
-      const sourceAmountHex = probeSourceAmount.toString(16)
+      const probePreviousAmount = new BigNumber(1000000000000)
+      const previousAmountHex = probePreviousAmount.toString(16)
       const probeDestinationAmount = await getNextAmount({
-        sourceLedger: prefix,
-        destinationLedger: nextHop.connectorLedger,
-        sourceAmount: probeSourceAmount
+        previousLedger: prefix,
+        nextLedger: nextHop.connectorLedger,
+        previousAmount: probePreviousAmount
       })
       const destinationAmountHex = probeDestinationAmount.toString(16)
       // TODO there's probably a more elegant way of working with liquidity curves
       const liquidityCurve = Buffer.concat([
         // TODO base minimum amount on min payment size
         Buffer.from('00000000000000000000000000000000', 'hex'), // [0,0]
-        Buffer.from('0'.repeat(16 - sourceAmountHex.length) + sourceAmountHex, 'hex'),
+        Buffer.from('0'.repeat(16 - previousAmountHex.length) + previousAmountHex, 'hex'),
         Buffer.from('0'.repeat(16 - destinationAmountHex.length) + destinationAmountHex, 'hex')
       ])
       responsePacket = IlpPacket.serializeIlqpLiquidityResponse({
         liquidityCurve,
         appliesToPrefix: nextHop.connectorLedger,
-        sourceHoldDuration: destinationHoldDuration,
+        sourceHoldDuration: destinationHoldDuration + MIN_MESSAGE_WINDOW,
         expiresAt: new Date(Date.now() + RATE_EXPIRY_DURATION)
       })
     }
 
+    // Respond with local quote
     const response = {
       to: nextHop.connectorAccount,
       ledger: nextHop.connectorLedger,
       ilp: base64url(responsePacket)
     }
-
     console.log('returning local quote for', id)
     await produce([{
       topic: 'incoming-rpc-responses',
@@ -132,12 +136,12 @@ incomingRequests.on('message', async (message) => {
     // the amount we ask our peer for by our rate
     let nextIlpPacket
     if (type === IlpPacket.Type.TYPE_ILQP_BY_SOURCE_REQUEST) {
-      const sourceAmount = uint64.twoNumbersToString(contentsReader.readUInt64())
+      const previousAmount = uint64.twoNumbersToString(contentsReader.readUInt64())
       const destinationHoldDuration = contentsReader.readUInt32()
       const nextAmount = await getNextAmount({
-        sourceLedger: prefix,
-        destinationLedger: nextHop.connectorLedger,
-        sourceAmount
+        previousLedger: prefix,
+        nextLedger: nextHop.connectorLedger,
+        previousAmount
       })
       nextIlpPacket = IlpPacket.serializeIlqpBySourceRequest({
         destinationAccount,
@@ -145,7 +149,9 @@ incomingRequests.on('message', async (message) => {
         destinationHoldDuration
       })
     } else {
-      outgoingQuoteRequests[id] = { sourceLedger: prefix }
+      // If it's a fixed destination amount or liquidity quote we'll apply our rate to the response
+
+      outgoingQuoteRequests[id] = { previousLedger: prefix }
       nextIlpPacket = request.ilp
     }
 
@@ -186,10 +192,12 @@ outgoingResponses.on('message', async (message) => {
   const type = packetReader.readUInt8()
   const contentsReader = new Reader(packetReader.readVarOctetString())
 
-  let responseIlpPacket
   // When responding to quote by destination amount requests
   // we need to adjust the return value by our rate
+  let responseIlpPacket
   if (type === IlpPacket.Type.TYPE_ILQP_BY_DESTINATION_RESPONSE) {
+    // Apply our rate to adjust the source amount
+
     const quoteRequestDetails = outgoingQuoteRequests[id]
     if (!quoteRequestDetails) {
       // TODO make it so the messages are partitioned and each instance only gets
@@ -197,23 +205,23 @@ outgoingResponses.on('message', async (message) => {
       console.log('got quote response for quote we do not know about', message)
       return
     }
-    const sourceLedger = quoteResponseDetails.sourceLedger
+    const previousLedger = quoteResponseDetails.previousLedger
 
-    const destinationAmount = uint64.twoNumbersToString(contentsReader.readUInt64())
+    const nextAmount = uint64.twoNumbersToString(contentsReader.readUInt64())
     const nextHoldDuration = contentsReader.readUInt32()
-    const sourceAmount = await getPreviousAmount({
-      sourceLedger,
-      destinationLedger: prefix,
-      destinationAmount
+    const previousAmount = await getPreviousAmount({
+      previousLedger,
+      nextLedger: prefix,
+      nextAmount
     })
     responseIlpPacket = IlpPacket.serializeIlqpByDestinationResponse({
-      sourceAmount,
-      sourceHoldDuration: nextHoldDuration
+      sourceAmount: previousAmount,
+      sourceHoldDuration: nextHoldDuration + MIN_MESSAGE_WINDOW
     })
   } else if (type === IlpPacket.Type.TYPE_ILQP_LIQUIDITY_RESPONSE) {
-    // apply our rate to the liquidity curve we got back from the quote
-    // TODO do we really need to support liquidity curve quoting?
+    // Apply our rate to the liquidity curve we got back from the quote
 
+    // TODO do we really need to support liquidity curve quoting?
     const quoteRequestDetails = outgoingQuoteRequests[id]
     if (!quoteRequestDetails) {
       // TODO make it so the messages are partitioned and each instance only gets
@@ -221,17 +229,17 @@ outgoingResponses.on('message', async (message) => {
       console.log('got quote response for quote we do not know about', message)
       return
     }
-    const sourceLedger = quoteResponseDetails.sourceLedger
+    const previousLedger = quoteResponseDetails.previousLedger
 
     const numPoints = packetReader.readVarUInt()
     const liquidityCurve = packetReader.readOctetString(numPoints * 16)
     const rate = await getRate({
-      sourceLedger,
-      destinationLedger: prefix
+      previousLedger,
+      nextLedger: prefix
     })
     const appliesToPrefix = packetReader.readVarOctetString()
     // TODO add time to the hold duration
-    const sourceHoldDuration = packetReader.readUInt32()
+    const nextHoldDuration = packetReader.readUInt32()
     const expiresAt = Date.parse(packetReader.readVarOctetString().toString('ascii'))
     const ourQuoteExpiry = Date.parse(Date.now() + RATE_EXPIRY_DURATION)
 
@@ -239,7 +247,7 @@ outgoingResponses.on('message', async (message) => {
     responseIlpPacket = IlpPacket.serializeIlqpLiquidityResponse({
       liquidityCurve: newCurve,
       appliesToPrefix,
-      sourceHoldDuration,
+      sourceHoldDuration: nextHoldDuration + MIN_MESSAGE_WINDOW,
       expiresAt: new Date(Math.min(expiresAt, ourQuoteExpiry))
     })
 
@@ -258,6 +266,7 @@ outgoingResponses.on('message', async (message) => {
   }
 })
 
+// Divide each source amount by the rate and return a new curve
 function applyRateToLiquidityCurve ({ rate, liquidityCurve }) {
   let index
   const writer = new Writer()
