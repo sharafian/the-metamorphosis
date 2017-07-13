@@ -42,3 +42,24 @@
 * Is Kafka the best stream technology to use?
 * How micro should the microservices be?
 * Should configuration be with files or UI?
+
+### Deploy
+
+If you're running ilp-kit through docker compose, an easy way to switch to the-metamorphosis is to ssh into your server, and run:
+```sh
+git clone https://github.com/sharafian/the-metamorphosis
+cd the-metamorphosis
+docker build -t interledgerjs/ilp-kit . # this will replace the interledgerjs/ilp-kit image on your server
+cd ..
+cd ilp-kit-docker-compose
+export ILP_EMAIL=you@ilp.example.com
+export ILP_DOMAIN=ilp.example.com 
+docker-compose up -d
+docker ps
+docker stop postgres
+docker exec ilp-kit cat config/connectorland-ilp-secret.txt; echo
+curl https://connector.land/test?peer=`docker exec ilp-kit cat config/connectorland-ilp-secret.txt`
+```
+
+You can of course also just run the Dockerfile and then set up a TLS proxy in front of the port 3010 it exposes,
+or you could have a look inside [this repos's Dockerfile](https://github.com/sharafian/the-metamorphosis/blob/master/Dockerfile) to learn how to set up Zookeeper + Kafka + Node.js + TheMetamorphosis
