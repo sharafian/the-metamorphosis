@@ -10,7 +10,7 @@
 
 - [x] Combine RPC Server and Authorizer
 - [x] Add rejector (passes back error messages)
-- [ ] Add fixer.io + coinmarketcap for exchange rates (and tag ledgers with currency codes)
+- [x] Add fixer.io + coinmarketcap for exchange rates (and tag ledgers with currency codes)
 - [x] Implement route broadcaster for CCP
 - [ ] Dynamic routing table (Kafka? Zookeeper? Redis?)
 - [ ] Implement route receiver for CCP

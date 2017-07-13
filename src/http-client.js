@@ -21,29 +21,43 @@ outgoingRpcRequests.on('message', async (message) => {
   const { id, body, method, prefix } = JSON.parse(message.value)
   console.log('process outgoing-rpc-requests', id)
 
-  const { uri, token } = getPeerRpcInfo(prefix)
-
-  let responseBody
+  const peerInfo = getPeerRpcInfo(prefix)
   let error
-  try {
-    const response = await agent
-      .post(uri)
-      .query({ method, prefix })
-      .set('Authorization', 'Bearer ' + token)
-      .send(body)
-    responseBody = response.body
-  } catch (err) {
-    console.error(`error sending rpc request ${id} to ${prefix} (${uri})`, err)
+  let responseBody
+  if (!peerInfo) {
+    console.error(`unknown peer ${id}: ${prefix}`)
     error = {
-      status: 502,
-      responseBody: 'error sending rpc request'
+      status: 422,
+      responseBody: 'Unknown peer: ' + prefix
+    }
+  } else {
+    const { uri, token } = peerInfo
+    try {
+      const response = await agent
+        .post(uri)
+        .query({ method, prefix })
+        .set('Authorization', 'Bearer ' + token)
+        .send(body)
+      responseBody = response.body
+    } catch (err) {
+      console.error(`error sending rpc request ${id} to ${prefix} (${uri})`, err)
+      error = {
+        status: 502,
+        responseBody: 'error sending rpc request'
+      }
     }
   }
 
   try {
     await produce([{
       topic: 'outgoing-rpc-responses',
-      messages: Buffer.from(JSON.stringify({ id, method, prefix, body: responseBody, error })),
+      messages: Buffer.from(JSON.stringify({
+        id,
+        method,
+        prefix,
+        body: responseBody,
+        error
+      })),
       timestamp: Date.now()
     }])
   } catch (err) {
