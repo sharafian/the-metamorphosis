@@ -51,7 +51,13 @@ function run(ilpDomain) {
     const token = base64url(crypto.randomBytes(32))
     const ilpSecret = 'ilp_secret:'+base64url(Buffer.from('https://' + CONNECTORLAND_LEDGER_PREFIX + ':' + token + '@' + ilpDomain + '/rpc', 'ascii'))
 
-    peers[CONNECTORLAND_LEDGER_PREFIX] = { uri: CONNECTORLAND_RPC_URI, token }
+    peers[CONNECTORLAND_LEDGER_PREFIX] = {
+      uri: CONNECTORLAND_RPC_URI,
+      token,
+      broadcast: true,
+      currencyCode: 'USD',
+      currencyScale: 9
+    }
     writePeers(peers)
     writeIlpSecret(ilpSecret)
     console.log('Wrote ' + CONNECTORLAND_ILP_SECRET_FILENAME, ilpSecret)
